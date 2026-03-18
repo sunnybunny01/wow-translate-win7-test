@@ -161,7 +161,8 @@ char g_error_buffer[256] = {0};
 
 TranslationClient::TranslationClient()
     : hSession(nullptr), hConnect(nullptr), initialized(false), running(false),
-      creditsRemaining(-1) {
+      creditsRemaining(-1), serverHost("34.92.64.54.sslip.io"), serverPort(443),
+      provider(TranslationProvider::PROXY) {
 }
 
 TranslationClient::~TranslationClient() {
@@ -169,7 +170,7 @@ TranslationClient::~TranslationClient() {
 }
 
 string TranslationClient::GetServerInfo() const {
-    return string("https://") + SERVER_HOST + ":" + to_string(SERVER_PORT);
+    return string("https://") + serverHost + ":" + to_string(serverPort);
 }
 
 bool TranslationClient::Initialize(const string& key) {
@@ -196,18 +197,18 @@ bool TranslationClient::Initialize(const string& key) {
 
     // Convert host to wide string
     wstring wHost;
-    for (const char* p = SERVER_HOST; *p; ++p) {
-        wHost += static_cast<wchar_t>(*p);
+    for (size_t i = 0; i < serverHost.length(); ++i) {
+        wHost += static_cast<wchar_t>(serverHost[i]);
     }
 
-    // Connect to the proxy server
+    // Connect to the server
     hConnect = WinHttpConnect(hSession,
                              wHost.c_str(),
-                             static_cast<INTERNET_PORT>(SERVER_PORT),
+                             static_cast<INTERNET_PORT>(serverPort),
                              0);
 
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to server: " + string(SERVER_HOST));
+        LOG_ERROR("Failed to connect to server: " + serverHost);
         WinHttpCloseHandle(hSession);
         hSession = nullptr;
         return false;
@@ -220,6 +221,16 @@ bool TranslationClient::Initialize(const string& key) {
     initialized = true;
     LOG_INFO("Translation client initialized successfully");
     return true;
+}
+
+bool TranslationClient::InitializeGoogleDirect(const string& googleApiKey) {
+    // Switch to Google Translate direct mode
+    provider = TranslationProvider::GOOGLE_DIRECT;
+    serverHost = "translation.googleapis.com";
+    serverPort = 443;
+
+    LOG_INFO("Switching to Google Direct mode");
+    return Initialize(googleApiKey);
 }
 
 void TranslationClient::Cleanup() {
@@ -397,60 +408,85 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
 
     CleanExpiredCache();
 
-    // Build JSON request body for proxy server
-    // Format: { "apiKey": "WT-xxx", "text": "...", "from": "zh", "to": "en" }
-    string requestBody = "{";
-    requestBody += "\"apiKey\":\"" + escapeJsonString(apiKey) + "\",";
-    requestBody += "\"text\":\"" + escapeJsonString(text) + "\",";
-    requestBody += "\"from\":\"" + sourceLang + "\",";
-    requestBody += "\"to\":\"" + targetLang + "\"";
-    requestBody += "}";
+    // Build request based on provider mode
+    string requestBody;
+    string path;
 
-    string path = "/api/translate";
+    if (provider == TranslationProvider::GOOGLE_DIRECT) {
+        // Google Translate v2 API — key in URL, Google JSON format
+        path = "/language/translate/v2?key=" + apiKey;
+        requestBody = "{";
+        requestBody += "\"q\":\"" + escapeJsonString(text) + "\",";
+        requestBody += "\"source\":\"" + sourceLang + "\",";
+        requestBody += "\"target\":\"" + targetLang + "\",";
+        requestBody += "\"format\":\"text\"";
+        requestBody += "}";
+        LOG_DEBUG("Google Direct: " + text.substr(0, 50) + " (" + sourceLang + " -> " + targetLang + ")");
+    } else {
+        // WoWTranslate proxy server format
+        path = "/api/translate";
+        requestBody = "{";
+        requestBody += "\"apiKey\":\"" + escapeJsonString(apiKey) + "\",";
+        requestBody += "\"text\":\"" + escapeJsonString(text) + "\",";
+        requestBody += "\"from\":\"" + sourceLang + "\",";
+        requestBody += "\"to\":\"" + targetLang + "\"";
+        requestBody += "}";
+        LOG_DEBUG("Proxy: " + text.substr(0, 50) + " (" + sourceLang + " -> " + targetLang + ")");
+    }
 
-    LOG_DEBUG("Requesting translation from proxy: " + text.substr(0, 50) + " (" + sourceLang + " -> " + targetLang + ")");
-
-    // Make HTTP request to proxy server
-    string response = HttpsRequest(SERVER_HOST, path, requestBody);
+    // Make HTTP request
+    string response = HttpsRequest(serverHost, path, requestBody);
 
     if (response.empty()) {
-        LOG_ERROR("Empty response from proxy server");
+        LOG_ERROR("Empty response from translation service");
         return TranslationResult::NETWORK_ERROR;
     }
 
-    LOG_DEBUG("Proxy response: " + response.substr(0, 200));
+    LOG_DEBUG("Response: " + response.substr(0, 200));
 
-    // Check for error in response
-    string error = SimpleJsonParser::extractField(response, "error");
-    if (!error.empty()) {
-        LOG_ERROR("Proxy error: " + error);
+    // Parse response based on provider
+    string translation;
 
-        // Check for specific errors
-        if (error.find("Insufficient credits") != string::npos) {
-            result = "INSUFFICIENT_CREDITS";
-            return TranslationResult::API_ERROR;
-        }
-        if (error.find("Invalid API key") != string::npos || error.find("Unauthorized") != string::npos) {
-            result = "INVALID_API_KEY";
+    if (provider == TranslationProvider::GOOGLE_DIRECT) {
+        // Google error format: {"error":{"code":400,"message":"..."}}
+        string errorMsg = SimpleJsonParser::extractField(response, "message");
+        if (!errorMsg.empty()) {
+            LOG_ERROR("Google API error: " + errorMsg);
+            result = errorMsg;
             return TranslationResult::API_ERROR;
         }
 
-        result = error;
-        return TranslationResult::API_ERROR;
+        // Google success: {"data":{"translations":[{"translatedText":"..."}]}}
+        translation = SimpleJsonParser::extractField(response, "translatedText");
+        creditsRemaining = 99999;  // Unlimited in direct mode
+    } else {
+        // Proxy error check
+        string error = SimpleJsonParser::extractField(response, "error");
+        if (!error.empty()) {
+            LOG_ERROR("Proxy error: " + error);
+            if (error.find("Insufficient credits") != string::npos) {
+                result = "INSUFFICIENT_CREDITS";
+                return TranslationResult::API_ERROR;
+            }
+            if (error.find("Invalid API key") != string::npos || error.find("Unauthorized") != string::npos) {
+                result = "INVALID_API_KEY";
+                return TranslationResult::API_ERROR;
+            }
+            result = error;
+            return TranslationResult::API_ERROR;
+        }
+
+        translation = ParseTranslationResponse(response);
+
+        double credits = SimpleJsonParser::extractNumber(response, "creditsRemaining");
+        if (credits >= 0) {
+            creditsRemaining = credits;
+        }
     }
-
-    // Extract translation
-    string translation = ParseTranslationResponse(response);
 
     if (translation.empty()) {
         LOG_ERROR("Failed to parse translation from response");
         return TranslationResult::API_ERROR;
-    }
-
-    // Update credits from response
-    double credits = SimpleJsonParser::extractNumber(response, "creditsRemaining");
-    if (credits >= 0) {
-        creditsRemaining = credits;
     }
 
     // Cache the result locally

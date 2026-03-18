@@ -147,6 +147,39 @@ int __fastcall detoured_UnitXP(void* L) {
                         return 1;
                     }
 
+                    // SET_PROVIDER - Switch to Google Direct or proxy mode
+                    else if (subcmd == "set_provider") {
+                        if (lua_gettop(L) >= 3) {
+                            string providerName{ lua_tostring(L, 3) };
+
+                            if (providerName == "google") {
+                                if (lua_gettop(L) >= 4) {
+                                    string googleKey{ lua_tostring(L, 4) };
+
+                                    // Create/reinitialize translator for Google Direct
+                                    g_translator = make_unique<TranslationClient>();
+                                    if (g_translator->InitializeGoogleDirect(googleKey)) {
+                                        lua_pushstring(L, "ok");
+                                        LOG_INFO("Switched to Google Direct mode");
+                                    } else {
+                                        lua_pushstring(L, "error|failed to connect to Google");
+                                        LOG_ERROR("Google Direct initialization failed");
+                                    }
+                                } else {
+                                    lua_pushstring(L, "error|Google API key required");
+                                }
+                            } else {
+                                // Switch back to proxy mode
+                                g_translator = make_unique<TranslationClient>();
+                                lua_pushstring(L, "ok");
+                                LOG_INFO("Switched to Proxy mode");
+                            }
+                            return 1;
+                        }
+                        lua_pushstring(L, "error|provider name required");
+                        return 1;
+                    }
+
                     // STATUS - Get current status
                     else if (subcmd == "status") {
                         string status = "WoWTranslate Status: DLL Active, Translator ";

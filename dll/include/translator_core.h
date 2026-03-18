@@ -10,6 +10,12 @@
 #include <thread>
 #include <atomic>
 
+// Translation provider mode
+enum class TranslationProvider {
+    PROXY = 0,          // WoWTranslate proxy server (default)
+    GOOGLE_DIRECT = 1   // Direct Google Translate API (user's own key)
+};
+
 // Translation result codes
 enum class TranslationResult {
     SUCCESS = 0,
@@ -66,9 +72,12 @@ private:
     std::unordered_map<std::string, CacheEntry> cache;
     bool initialized;
 
-    // Server configuration (production only)
-    static constexpr const char* SERVER_HOST = "34.92.64.54.sslip.io";
-    static constexpr int SERVER_PORT = 443;
+    // Server configuration
+    std::string serverHost;
+    int serverPort;
+
+    // Provider mode
+    TranslationProvider provider;
 
     // Async translation support
     std::queue<AsyncRequest> requestQueue;
@@ -99,11 +108,15 @@ public:
     ~TranslationClient();
 
     bool Initialize(const std::string& key);
+    bool InitializeGoogleDirect(const std::string& googleApiKey);
     void Cleanup();
     bool IsInitialized() const { return initialized; }
 
     // Server info
     std::string GetServerInfo() const;
+
+    // Provider
+    TranslationProvider GetProvider() const { return provider; }
 
     // Credits tracking
     double GetCreditsRemaining() const { return creditsRemaining; }
