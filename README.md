@@ -69,18 +69,6 @@ YourWoWFolder/
 
 ---
 
-## 💰 Pricing
-
-| Rate | Details |
-|------|---------|
-| **$30 / million characters** | ~0.003¢ per character |
-| **Cache hits are FREE** | Repeated messages cost nothing |
-| **Typical usage** | $1-3/month for active players |
-
-Check your balance anytime with `/wt status` or `/wt show`.
-
----
-
 ## 🔧 How It Works
 
 ```
