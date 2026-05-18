@@ -41,6 +41,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             return FALSE;
         }
 
+        // Connect to Google Free endpoint immediately — no API key needed
+        if (!g_translator->Initialize()) {
+            LOG_WARNING("Translation client failed to initialize at load time");
+        }
+
         // Initialize Lua interface
         if (!InitializeLuaInterface()) {
             LOG_ERROR("Failed to initialize Lua interface");

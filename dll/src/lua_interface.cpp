@@ -117,11 +117,10 @@ bool lua_isstring(void* L, int index) {
 // Main WoWTranslate command handler
 // Commands:
 //   UnitXP("WoWTranslate", "ping") -> "pong"
-//   UnitXP("WoWTranslate", "setkey", apiKey) -> "ok" or error
-//   UnitXP("WoWTranslate", "translate_async", requestId, text) -> "ok" or error
-//   UnitXP("WoWTranslate", "poll") -> "requestId|translation|error|credits" or ""
+//   UnitXP("WoWTranslate", "translate_async", requestId, text, [sourceLang], [targetLang]) -> "ok" or "error|..."
+//   UnitXP("WoWTranslate", "poll") -> "requestId|translation|error" or ""
 //   UnitXP("WoWTranslate", "status") -> status string
-//   UnitXP("WoWTranslate", "credits") -> get credits remaining
+//   UnitXP("WoWTranslate", "translate", text, [sourceLang], [targetLang]) -> translated text or "error|..."
 int __fastcall detoured_UnitXP(void* L) {
     try {
         if (lua_gettop(L) >= 1) {
@@ -143,89 +142,18 @@ int __fastcall detoured_UnitXP(void* L) {
 
                     // VERSION - Get version string
                     else if (subcmd == "version") {
-                        lua_pushstring(L, "WoWTranslate v0.2 - Multi-language Translation via Proxy Server");
-                        return 1;
-                    }
-
-                    // SET_PROVIDER - Switch to Google Direct or proxy mode
-                    else if (subcmd == "set_provider") {
-                        if (lua_gettop(L) >= 3) {
-                            string providerName{ lua_tostring(L, 3) };
-
-                            if (providerName == "google") {
-                                if (lua_gettop(L) >= 4) {
-                                    string googleKey{ lua_tostring(L, 4) };
-
-                                    // Create/reinitialize translator for Google Direct
-                                    g_translator = make_unique<TranslationClient>();
-                                    if (g_translator->InitializeGoogleDirect(googleKey)) {
-                                        lua_pushstring(L, "ok");
-                                        LOG_INFO("Switched to Google Direct mode");
-                                    } else {
-                                        lua_pushstring(L, "error|failed to connect to Google");
-                                        LOG_ERROR("Google Direct initialization failed");
-                                    }
-                                } else {
-                                    lua_pushstring(L, "error|Google API key required");
-                                }
-                            } else {
-                                // Switch back to proxy mode
-                                g_translator = make_unique<TranslationClient>();
-                                lua_pushstring(L, "ok");
-                                LOG_INFO("Switched to Proxy mode");
-                            }
-                            return 1;
-                        }
-                        lua_pushstring(L, "error|provider name required");
+                        lua_pushstring(L, "WoWTranslate v0.13 - Free translation via Google");
                         return 1;
                     }
 
                     // STATUS - Get current status
                     else if (subcmd == "status") {
-                        string status = "WoWTranslate Status: DLL Active, Translator ";
+                        string status = "WoWTranslate: DLL Active, Translator ";
                         status += (g_translator && g_translator->IsInitialized()) ? "Ready" : "Not Ready";
                         if (g_translator) {
-                            status += ", Server: " + g_translator->GetServerInfo();
                             status += ", Pending: " + to_string(g_translator->GetPendingCount());
-                            double credits = g_translator->GetCreditsRemaining();
-                            if (credits >= 0) {
-                                status += ", Credits: " + to_string(static_cast<int>(credits)) + " cents";
-                            }
                         }
                         lua_pushstring(L, status);
-                        return 1;
-                    }
-
-                    // SETKEY - Set the WoWTranslate API key
-                    else if (subcmd == "setkey") {
-                        if (lua_gettop(L) >= 3) {
-                            string apiKey{ lua_tostring(L, 3) };
-
-                            if (g_translator && g_translator->Initialize(apiKey)) {
-                                lua_pushstring(L, "ok");
-                                LOG_INFO("API key set successfully");
-                            } else {
-                                lua_pushstring(L, "error|initialization failed");
-                                LOG_ERROR("Failed to initialize with API key");
-                            }
-                            return 1;
-                        }
-                        lua_pushstring(L, "error|API key required");
-                        return 1;
-                    }
-
-                    // CREDITS - Get credits remaining
-                    else if (subcmd == "credits") {
-                        if (g_translator) {
-                            double credits = g_translator->GetCreditsRemaining();
-                            if (credits >= 0) {
-                                lua_pushnumber(L, credits);
-                            } else {
-                                lua_pushstring(L, "unknown");
-                            }
-                        } else {
-                            lua_pushstring(L, "error|translator not available");
-                        }
                         return 1;
                     }
 
@@ -268,7 +196,7 @@ int __fastcall detoured_UnitXP(void* L) {
                     }
 
                     // POLL - Poll for completed translation
-                    // Returns: "requestId|translation|error|credits" or ""
+                    // Returns: "requestId|translation|error" or ""
                     else if (subcmd == "poll") {
                         if (!g_translator) {
                             lua_pushstring(L, "");
@@ -277,14 +205,11 @@ int __fastcall detoured_UnitXP(void* L) {
 
                         string requestId, translation, error;
                         if (g_translator->PollResult(requestId, translation, error)) {
-                            // Format: requestId|translation|error|credits
-                            double credits = g_translator->GetCreditsRemaining();
-                            string creditsStr = (credits >= 0) ? to_string(static_cast<int>(credits)) : "";
-                            string result = requestId + "|" + translation + "|" + error + "|" + creditsStr;
+                            // Format: requestId|translation|error
+                            string result = requestId + "|" + translation + "|" + error;
                             lua_pushstring(L, result);
-                            LOG_DEBUG("Poll returned: " + requestId + " (credits: " + creditsStr + ")");
+                            LOG_DEBUG("Poll returned: " + requestId);
                         } else {
-                            // No results available
                             lua_pushstring(L, "");
                         }
                         return 1;

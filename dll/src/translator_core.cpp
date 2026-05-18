@@ -1,5 +1,5 @@
 // translator_core.cpp - Translation functionality for WoWTranslate
-// Connects to WoWTranslate proxy server for translation with credit tracking
+// Sends GET requests to translate.googleapis.com (client=gtx) — no API key required
 
 #include <windows.h>
 #include <winhttp.h>
@@ -17,6 +17,27 @@
 #include "../include/utils.h"
 
 using namespace std;
+
+// UTF-8 codepoint encoder (file-scope for use in multiple places)
+static string ConvertCodepointToUTF8(unsigned int codepoint) {
+    string result;
+    if (codepoint <= 0x7F) {
+        result += static_cast<char>(codepoint);
+    } else if (codepoint <= 0x7FF) {
+        result += static_cast<char>(0xC0 | (codepoint >> 6));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0xFFFF) {
+        result += static_cast<char>(0xE0 | (codepoint >> 12));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0x10FFFF) {
+        result += static_cast<char>(0xF0 | (codepoint >> 18));
+        result += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+    return result;
+}
 
 // Simple JSON parser for proxy server responses
 class SimpleJsonParser {
@@ -130,28 +151,6 @@ private:
 
         return result;
     }
-
-    static string ConvertCodepointToUTF8(unsigned int codepoint) {
-        string result;
-
-        if (codepoint <= 0x7F) {
-            result += static_cast<char>(codepoint);
-        } else if (codepoint <= 0x7FF) {
-            result += static_cast<char>(0xC0 | (codepoint >> 6));
-            result += static_cast<char>(0x80 | (codepoint & 0x3F));
-        } else if (codepoint <= 0xFFFF) {
-            result += static_cast<char>(0xE0 | (codepoint >> 12));
-            result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (codepoint & 0x3F));
-        } else if (codepoint <= 0x10FFFF) {
-            result += static_cast<char>(0xF0 | (codepoint >> 18));
-            result += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (codepoint & 0x3F));
-        }
-
-        return result;
-    }
 };
 
 // Global variables
@@ -160,78 +159,51 @@ char g_translation_buffer[4096] = {0};
 char g_error_buffer[256] = {0};
 
 TranslationClient::TranslationClient()
-    : hSession(nullptr), hConnect(nullptr), initialized(false), running(false),
-      creditsRemaining(-1), serverHost("34.92.64.54.sslip.io"), serverPort(443),
-      provider(TranslationProvider::PROXY) {
+    : hSession(nullptr), hConnect(nullptr), initialized(false), running(false) {
 }
 
 TranslationClient::~TranslationClient() {
     Cleanup();
 }
 
-string TranslationClient::GetServerInfo() const {
-    return string("https://") + serverHost + ":" + to_string(serverPort);
-}
+bool TranslationClient::Initialize() {
+    if (initialized) Cleanup();
 
-bool TranslationClient::Initialize(const string& key) {
-    if (initialized) {
-        Cleanup();
-    }
+    const std::string host = "translate.googleapis.com";
+    const int port = 443;
 
-    apiKey = key;
+    LOG_INFO("Initializing Google Free translation client");
 
-    LOG_INFO("Initializing translation client");
-    LOG_INFO("Server: " + GetServerInfo());
-
-    // Initialize WinHTTP
-    hSession = WinHttpOpen(L"WoWTranslate/0.2",
-                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                          WINHTTP_NO_PROXY_NAME,
-                          WINHTTP_NO_PROXY_BYPASS,
-                          0);
-
+    hSession = WinHttpOpen(L"WoWTranslate/1.0",
+                           WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                           WINHTTP_NO_PROXY_NAME,
+                           WINHTTP_NO_PROXY_BYPASS,
+                           0);
     if (!hSession) {
         LOG_ERROR("Failed to initialize WinHTTP session");
         return false;
     }
 
-    // Convert host to wide string
-    wstring wHost;
-    for (size_t i = 0; i < serverHost.length(); ++i) {
-        wHost += static_cast<wchar_t>(serverHost[i]);
-    }
+    // 8-second timeouts so a blocked/unreachable endpoint fails fast
+    WinHttpSetTimeouts(hSession, 8000, 8000, 8000, 8000);
 
-    // Connect to the server
-    hConnect = WinHttpConnect(hSession,
-                             wHost.c_str(),
-                             static_cast<INTERNET_PORT>(serverPort),
-                             0);
-
+    wstring wHost(host.begin(), host.end());
+    hConnect = WinHttpConnect(hSession, wHost.c_str(),
+                              static_cast<INTERNET_PORT>(port), 0);
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to server: " + serverHost);
+        LOG_ERROR("Failed to connect to translate.googleapis.com");
         WinHttpCloseHandle(hSession);
         hSession = nullptr;
         return false;
     }
 
-    // Start worker thread for async translations
     running = true;
     workerThread = thread(&TranslationClient::WorkerThreadFunc, this);
-
     initialized = true;
-    LOG_INFO("Translation client initialized successfully");
+    LOG_INFO("Google Free translation client initialized");
     return true;
 }
 
-bool TranslationClient::InitializeGoogleDirect(const string& googleApiKey) {
-    // Switch to Google Translate direct mode
-    provider = TranslationProvider::GOOGLE_DIRECT;
-    serverHost = "translation.googleapis.com";
-    serverPort = 443;
-
-    LOG_INFO("Switching to Google Direct mode");
-    return Initialize(googleApiKey);
-}
 
 void TranslationClient::Cleanup() {
     // Stop worker thread
@@ -299,70 +271,44 @@ void TranslationClient::CleanExpiredCache() {
     }
 }
 
-// Escape a string for JSON
-static string escapeJsonString(const string& input) {
-    ostringstream ss;
-    for (char c : input) {
-        switch (c) {
-            case '"': ss << "\\\""; break;
-            case '\\': ss << "\\\\"; break;
-            case '\b': ss << "\\b"; break;
-            case '\f': ss << "\\f"; break;
-            case '\n': ss << "\\n"; break;
-            case '\r': ss << "\\r"; break;
-            case '\t': ss << "\\t"; break;
-            default:
-                if ('\x00' <= c && c <= '\x1f') {
-                    ss << "\\u" << hex << setw(4) << setfill('0') << (int)c;
-                } else {
-                    ss << c;
-                }
-        }
-    }
-    return ss.str();
+string TranslationClient::MapLangCode(const string& lang) {
+    if (lang == "zh") return "zh-CN";
+    // ja, ko, ru, en are already valid Google lang codes
+    return lang;
 }
 
-string TranslationClient::HttpsRequest(const string& host, const string& path, const string& postData) {
-    if (!hConnect) {
-        return "";
-    }
+string TranslationClient::HttpsGet(const string& path) {
+    if (!hConnect) return "";
 
     wstring wPath(path.begin(), path.end());
 
-    DWORD flags = WINHTTP_FLAG_SECURE;  // Always use HTTPS
-
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect,
-                                           L"POST",
-                                           wPath.c_str(),
-                                           nullptr,
-                                           WINHTTP_NO_REFERER,
-                                           WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                           flags);
+    HINTERNET hRequest = WinHttpOpenRequest(
+        hConnect, L"GET", wPath.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+        WINHTTP_FLAG_SECURE);
 
     if (!hRequest) {
-        LOG_ERROR("Failed to open HTTP request");
+        LOG_ERROR("Failed to open GET request");
         return "";
     }
 
-    // Set headers
-    wstring headers = L"Content-Type: application/json\r\n";
-    WinHttpAddRequestHeaders(hRequest, headers.c_str(), (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD);
+    // Identify as a browser to avoid 403s
+    wstring headers = L"User-Agent: Mozilla/5.0\r\n";
+    WinHttpAddRequestHeaders(hRequest, headers.c_str(), (DWORD)-1,
+                             WINHTTP_ADDREQ_FLAG_ADD);
 
-    // Send request
     BOOL result = WinHttpSendRequest(hRequest,
-                                    WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                                    (LPVOID)postData.c_str(), (DWORD)postData.length(),
-                                    (DWORD)postData.length(), 0);
+                                     WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                     nullptr, 0, 0, 0);
 
     string response;
     if (result && WinHttpReceiveResponse(hRequest, nullptr)) {
         DWORD bytesAvailable = 0;
         char buffer[8192];
-
-        while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable) && bytesAvailable > 0) {
+        while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable)
+               && bytesAvailable > 0) {
             DWORD bytesRead = 0;
             DWORD bytesToRead = min(bytesAvailable, (DWORD)(sizeof(buffer) - 1));
-
             if (WinHttpReadData(hRequest, buffer, bytesToRead, &bytesRead)) {
                 buffer[bytesRead] = '\0';
                 response += string(buffer, bytesRead);
@@ -371,129 +317,114 @@ string TranslationClient::HttpsRequest(const string& host, const string& path, c
             }
         }
     } else {
-        DWORD error = GetLastError();
-        LOG_ERROR("HTTP request failed with error: " + to_string(error));
+        LOG_ERROR("GET request failed: " + to_string(GetLastError()));
     }
 
     WinHttpCloseHandle(hRequest);
     return response;
 }
 
-string TranslationClient::ParseTranslationResponse(const string& jsonResponse) {
-    // Extract translation from proxy server response
-    return SimpleJsonParser::extractField(jsonResponse, "translation");
+string TranslationClient::ParseGoogleFreeResponse(const string& json) {
+    string result;
+
+    // Find the start of the sentence array: [[[
+    size_t pos = json.find("[[[");
+    if (pos == string::npos) return "";
+    pos += 3; // now at opening " of first translated segment
+
+    // Upper bound: the ]] that closes the outer sentence array
+    size_t sentencesEnd = json.find("]]", pos);
+
+    while (pos < json.size()) {
+        if (json[pos] != '"') break;
+        pos++; // skip opening "
+
+        string segment;
+        while (pos < json.size() && json[pos] != '"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) {
+                pos++;
+                switch (json[pos]) {
+                    case '"':  segment += '"';  break;
+                    case '\\': segment += '\\'; break;
+                    case 'n':  segment += '\n'; break;
+                    case 'r':  segment += '\r'; break;
+                    case 't':  segment += '\t'; break;
+                    case 'u': {
+                        if (pos + 4 < json.size()) {
+                            string hex = json.substr(pos + 1, 4);
+                            try {
+                                unsigned int cp = stoul(hex, nullptr, 16);
+                                segment += ConvertCodepointToUTF8(cp);
+                                pos += 4;
+                            } catch (...) {}
+                        }
+                        break;
+                    }
+                    default: segment += json[pos]; break;
+                }
+            } else {
+                segment += json[pos];
+            }
+            pos++;
+        }
+        result += segment;
+        if (pos < json.size()) pos++; // skip closing "
+
+        // Find next inner array: ,["  within the sentence array bounds
+        size_t nextInner = json.find(",[\"", pos);
+        if (nextInner == string::npos ||
+            (sentencesEnd != string::npos && nextInner > sentencesEnd)) break;
+        pos = nextInner + 2; // point at the opening " of next segment
+    }
+
+    return result;
 }
 
-// Synchronous translation via proxy server
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
-                                                   const string& sourceLang, const string& targetLang) {
-    if (!initialized) {
-        LOG_ERROR("Translation client not initialized");
-        return TranslationResult::INVALID_PARAMS;
-    }
+                                                    const string& sourceLang,
+                                                    const string& targetLang) {
+    if (!initialized) return TranslationResult::INVALID_PARAMS;
+    if (text.empty())  return TranslationResult::INVALID_PARAMS;
 
-    if (text.empty()) {
-        LOG_ERROR("Invalid translation parameters: empty text");
-        return TranslationResult::INVALID_PARAMS;
-    }
-
-    // Check local cache first (DLL-side cache)
+    // DLL-side cache check
     string cacheKey = GenerateCacheKey(text, sourceLang, targetLang);
     auto cacheIt = cache.find(cacheKey);
-    if (cacheIt != cache.end() && (GetTickCount() - cacheIt->second.timestamp) < CACHE_EXPIRY_MS) {
+    if (cacheIt != cache.end() &&
+        (GetTickCount() - cacheIt->second.timestamp) < CACHE_EXPIRY_MS) {
         result = cacheIt->second.translation;
-        LOG_DEBUG("Local cache hit for: " + text.substr(0, 50));
+        LOG_DEBUG("Cache hit: " + text.substr(0, 50));
         return TranslationResult::SUCCESS;
     }
 
     CleanExpiredCache();
 
-    // Build request based on provider mode
-    string requestBody;
-    string path;
+    // Build Google Free GET path
+    string sl = MapLangCode(sourceLang);
+    string tl = MapLangCode(targetLang);
+    string path = "/translate_a/single?client=gtx&sl=" + sl +
+                  "&tl=" + tl + "&dt=t&q=" + UrlEncode(text);
 
-    if (provider == TranslationProvider::GOOGLE_DIRECT) {
-        // Google Translate v2 API — key in URL, Google JSON format
-        path = "/language/translate/v2?key=" + apiKey;
-        requestBody = "{";
-        requestBody += "\"q\":\"" + escapeJsonString(text) + "\",";
-        requestBody += "\"source\":\"" + sourceLang + "\",";
-        requestBody += "\"target\":\"" + targetLang + "\",";
-        requestBody += "\"format\":\"text\"";
-        requestBody += "}";
-        LOG_DEBUG("Google Direct: " + text.substr(0, 50) + " (" + sourceLang + " -> " + targetLang + ")");
-    } else {
-        // WoWTranslate proxy server format
-        path = "/api/translate";
-        requestBody = "{";
-        requestBody += "\"apiKey\":\"" + escapeJsonString(apiKey) + "\",";
-        requestBody += "\"text\":\"" + escapeJsonString(text) + "\",";
-        requestBody += "\"from\":\"" + sourceLang + "\",";
-        requestBody += "\"to\":\"" + targetLang + "\"";
-        requestBody += "}";
-        LOG_DEBUG("Proxy: " + text.substr(0, 50) + " (" + sourceLang + " -> " + targetLang + ")");
-    }
+    LOG_DEBUG("GET " + path.substr(0, 120));
 
-    // Make HTTP request
-    string response = HttpsRequest(serverHost, path, requestBody);
+    string response = HttpsGet(path);
 
     if (response.empty()) {
-        LOG_ERROR("Empty response from translation service");
+        LOG_ERROR("Empty response from Google Free");
         return TranslationResult::NETWORK_ERROR;
     }
 
     LOG_DEBUG("Response: " + response.substr(0, 200));
 
-    // Parse response based on provider
-    string translation;
-
-    if (provider == TranslationProvider::GOOGLE_DIRECT) {
-        // Google error format: {"error":{"code":400,"message":"..."}}
-        string errorMsg = SimpleJsonParser::extractField(response, "message");
-        if (!errorMsg.empty()) {
-            LOG_ERROR("Google API error: " + errorMsg);
-            result = errorMsg;
-            return TranslationResult::API_ERROR;
-        }
-
-        // Google success: {"data":{"translations":[{"translatedText":"..."}]}}
-        translation = SimpleJsonParser::extractField(response, "translatedText");
-        creditsRemaining = 99999;  // Unlimited in direct mode
-    } else {
-        // Proxy error check
-        string error = SimpleJsonParser::extractField(response, "error");
-        if (!error.empty()) {
-            LOG_ERROR("Proxy error: " + error);
-            if (error.find("Insufficient credits") != string::npos) {
-                result = "INSUFFICIENT_CREDITS";
-                return TranslationResult::API_ERROR;
-            }
-            if (error.find("Invalid API key") != string::npos || error.find("Unauthorized") != string::npos) {
-                result = "INVALID_API_KEY";
-                return TranslationResult::API_ERROR;
-            }
-            result = error;
-            return TranslationResult::API_ERROR;
-        }
-
-        translation = ParseTranslationResponse(response);
-
-        double credits = SimpleJsonParser::extractNumber(response, "creditsRemaining");
-        if (credits >= 0) {
-            creditsRemaining = credits;
-        }
-    }
+    string translation = ParseGoogleFreeResponse(response);
 
     if (translation.empty()) {
-        LOG_ERROR("Failed to parse translation from response");
+        LOG_ERROR("Failed to parse Google Free response");
         return TranslationResult::API_ERROR;
     }
 
-    // Cache the result locally
     cache[cacheKey] = CacheEntry(translation);
-
     result = translation;
-    LOG_DEBUG("Translation successful: " + text.substr(0, 30) + " -> " + translation.substr(0, 50));
+    LOG_DEBUG("Translated: " + text.substr(0, 30) + " -> " + translation.substr(0, 50));
     return TranslationResult::SUCCESS;
 }
 
@@ -524,12 +455,6 @@ bool TranslationClient::PollResult(string& requestId, string& translation, strin
     requestId = result.requestId;
     translation = result.translation;
     error = result.error;
-
-    // Append credits info to the result for the Lua side
-    // Format: translation|error|credits
-    if (!translation.empty() || !error.empty()) {
-        // Credits will be appended by the caller in lua_interface
-    }
 
     return true;
 }
@@ -563,27 +488,20 @@ void TranslationClient::WorkerThreadFunc() {
             string translation;
             string error;
 
-            TranslationResult tr = TranslateText(request.text, translation, request.sourceLang, request.targetLang);
+            TranslationResult tr = TranslateText(request.text, translation,
+                                                  request.sourceLang, request.targetLang);
 
             if (tr != TranslationResult::SUCCESS) {
-                // Check if translation contains error message
-                if (!translation.empty() && (translation == "INSUFFICIENT_CREDITS" || translation == "INVALID_API_KEY")) {
-                    error = translation;
-                    translation = "";
-                } else {
-                    switch (tr) {
-                        case TranslationResult::NETWORK_ERROR: error = "network error"; break;
-                        case TranslationResult::API_ERROR: error = translation.empty() ? "API error" : translation; break;
-                        case TranslationResult::ENCODING_ERROR: error = "encoding error"; break;
-                        case TranslationResult::TIMEOUT_ERROR: error = "timeout"; break;
-                        case TranslationResult::INVALID_PARAMS: error = "invalid parameters"; break;
-                        default: error = "unknown error"; break;
-                    }
-                    translation = "";
+                switch (tr) {
+                    case TranslationResult::NETWORK_ERROR:  error = "network error"; break;
+                    case TranslationResult::API_ERROR:      error = "API error";     break;
+                    case TranslationResult::ENCODING_ERROR: error = "encoding error"; break;
+                    case TranslationResult::TIMEOUT_ERROR:  error = "timeout";       break;
+                    default:                                error = "unknown error";  break;
                 }
+                translation = "";
             }
 
-            // Push result to result queue
             {
                 lock_guard<mutex> lock(resultMutex);
                 resultQueue.push(AsyncResult(request.requestId, translation, error));

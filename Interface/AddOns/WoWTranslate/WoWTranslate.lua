@@ -15,6 +15,8 @@ local DEBUG_MODE = false
 local addonLoaded = false
 local originalAddMessage = nil
 local playerIsAFK = false
+local dllWarnShown = false
+local hookCallCount = 0         -- incremented every time any hook body executes
 
 local pendingMessages = {}
 local messageCounter = 0
@@ -80,7 +82,6 @@ local SYSTEM_EVENTS = {
 
 local defaults = {
     enabled = true,
-    apiKey = "",
     debugMode = false,
     -- Outgoing translation settings
     outgoingEnabled = false,  -- Off by default
@@ -105,10 +106,11 @@ local defaults = {
         CHANNEL = true,
     },
     outgoingPrefix = "[Translated by WoWTranslate]",
-    disableWhileAfk = true,
+    outgoingPrefixEnabled = true,
+    disableWhileAfk = false,
     translateSystemMessages = false,  -- Don't translate system msgs, emotes, NPC speech
     -- Language settings (any-to-any translation)
-    incomingFromLang = "zh",
+    enabledSourceLangs = { zh = true, ja = true, ko = true, ru = true },
     incomingToLang = "en",
     outgoingFromLang = "en",
     outgoingToLang = "zh",
@@ -237,6 +239,38 @@ local function ContainsChinese(text)
     return ContainsLanguageChars(text, "zh")
 end
 
+-- Auto-detect which source language a message is in.
+-- Returns "zh", "ja", "ko", "ru", or nil if no supported language found.
+local function DetectSourceLanguage(text)
+    if not text then return nil end
+    local enabled = (WoWTranslateDB and WoWTranslateDB.enabledSourceLangs)
+                    or { zh=true, ja=true, ko=true, ru=true }
+    -- If table exists but every lang is nil/false, fall back to all-enabled
+    if not enabled.zh and not enabled.ja and not enabled.ko and not enabled.ru then
+        enabled = { zh=true, ja=true, ko=true, ru=true }
+    end
+
+    local hasKorean   = false
+    local hasHiragana = false
+    local hasCJK      = false
+    local hasRussian  = false
+
+    for i = 1, string.len(text) do
+        local b = string.byte(text, i)
+        if b >= 234 and b <= 237 then hasKorean = true
+        elseif b == 227            then hasHiragana = true
+        elseif b >= 228 and b <= 233 then hasCJK = true
+        elseif b == 208 or b == 209  then hasRussian = true
+        end
+    end
+
+    if enabled.ko and hasKorean   then return "ko" end
+    if enabled.ja and hasHiragana then return "ja" end
+    if enabled.ru and hasRussian  then return "ru" end
+    if enabled.zh and hasCJK      then return "zh" end
+    return nil
+end
+
 -- ============================================================================
 -- HYPERLINK LOCALIZATION
 -- ============================================================================
@@ -318,7 +352,7 @@ local function ParseHyperlink(link)
     local displayText = nil
 
     -- Check for colored link: |cFFRRGGBB|H...
-    local colorStart = string.find(link, "^|c%x%x%x%x%x%x%x%x")
+    local colorStart = string.find(link, "^|c........")
     if colorStart then
         colorCode = string.sub(link, 3, 10)  -- Extract FFRRGGBB
     end
@@ -479,7 +513,7 @@ local function FindAllHyperlinks(text)
 
     while pos <= string.len(text) do
         -- Look for hyperlink start - either |c (colored) or |H (plain)
-        local colorStart = string.find(text, "|c%x%x%x%x%x%x%x%x|H", pos)
+        local colorStart = string.find(text, "|c........|H", pos)
         local plainStart = string.find(text, "|H", pos)
 
         local linkStart = nil
@@ -586,11 +620,47 @@ end
 -- Check if any text segments contain source language characters
 local function HasTranslatableContent(segments)
     for _, seg in ipairs(segments) do
-        if seg.type == "text" and ContainsSourceLanguage(seg.content) then
+        if seg.type == "text" and DetectSourceLanguage(seg.content) then
             return true
         end
     end
     return false
+end
+
+-- Strip WoW color codes from text before sending to translation API.
+-- |cFFRRGGBB...text...|r sequences are not valid UTF-8 markup and confuse Google.
+-- The pipe character in translations would also break the requestId|result|error wire format.
+local function StripColorCodes(text)
+    if not text then return text end
+    -- Use "." (any char) instead of %x to avoid any pattern-class compatibility concerns.
+    -- WoW color codes are always |c followed by exactly 8 hex characters.
+    local result = string.gsub(text, "|c........", "")
+    result = string.gsub(result, "|r", "")
+    return result
+end
+
+-- Split a fully-formatted chat line into header and message body.
+-- The header is everything up to and including the first ": " separator
+-- (e.g. "|cFF...[PlayerName]|r says: ").  The body is what follows.
+-- If no separator is found the header is empty and body is the full text.
+local function SplitHeaderAndMessage(text)
+    local pos1 = string.find(text, ": ", 1, true)
+    local pos2 = string.find(text, "\239\188\154", 1, true) -- UTF-8 fullwidth colon
+    local pos3 = string.find(text, "\163\186", 1, true)     -- GBK colon
+
+    local bestPos = nil
+    local bestLen = 0
+    if pos1 then bestPos = pos1; bestLen = 2 end
+    if pos2 and (not bestPos or pos2 < bestPos) then bestPos = pos2; bestLen = 3 end
+    if pos3 and (not bestPos or pos3 < bestPos) then bestPos = pos3; bestLen = 2 end
+
+    if not bestPos then
+        return "", text
+    end
+
+    local header = string.sub(text, 1, bestPos + bestLen - 1)
+    local msg    = string.sub(text, bestPos + bestLen)
+    return header, msg
 end
 
 -- Build text to translate: only text segments, hyperlinks become URL placeholders
@@ -601,7 +671,7 @@ local function BuildTranslatableText(segments)
 
     for _, seg in ipairs(segments) do
         if seg.type == "text" then
-            table.insert(parts, seg.content)
+            table.insert(parts, StripColorCodes(seg.content))
         else
             linkIndex = linkIndex + 1
             -- Use URL format - translation APIs preserve URLs
@@ -694,6 +764,7 @@ end
 -- ============================================================================
 
 local function HookChatFrames()
+    -- Keep originalAddMessage for DebugLog display only
     if not originalAddMessage and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
     end
@@ -702,181 +773,110 @@ local function HookChatFrames()
         local frameName = "ChatFrame" .. i
         local frame = getglobal(frameName)
 
-        if frame and frame.AddMessage and not frame.WoWTranslateHooked then
-            frame.WoWTranslateHooked = true
-            local frameOriginalAddMessage = frame.AddMessage
+        if frame and not frame.WoWTranslateHooked then
+            local origScript = frame:GetScript("OnEvent")
+            if not origScript then
+                DebugLog("No OnEvent script on", frameName)
+            else
+                frame.WoWTranslateHooked = true
 
-            frame.AddMessage = function(self, text, r, g, b, id, holdTime)
-                if not WoWTranslateDB or not WoWTranslateDB.enabled then
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
+                frame:SetScript("OnEvent", function()
+                    hookCallCount = hookCallCount + 1
 
-                if not text or not ContainsSourceLanguage(text) then
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
+                    -- Capture event globals before origScript may clobber them
+                    local capturedEvent = event
+                    local capturedArg1  = arg1
+                    local capturedArg2  = arg2   -- sender name (may be nil for system events)
+                    local capturedThis  = this
 
-                -- Skip translation while AFK
-                if WoWTranslateDB.disableWhileAfk and playerIsAFK then
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
-
-                -- Check incoming channel filter
-                if currentIncomingChannel then
-                    local inChannels = WoWTranslateDB.incomingChannels
-                    if inChannels and not inChannels[currentIncomingChannel] then
-                        frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
+                    -- Let WoW's own filter decide: if origScript didn't add a message
+                    -- to this frame (filtered out), don't add a translation either.
+                    local msgsBefore = capturedThis:GetNumMessages()
+                    origScript()
+                    if capturedThis:GetNumMessages() <= msgsBefore then
                         return
                     end
-                end
 
-                -- Skip system messages, emotes, NPC speech
-                if currentIsSystemEvent and not WoWTranslateDB.translateSystemMessages then
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
+                    if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
+                    if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
 
-                -- Log original message for debugging
-                DebugLog("ORIGINAL MSG:", string.sub(text, 1, 150))
+                    local channel  = EVENT_TO_CHANNEL[capturedEvent]
+                    local isSystem = SYSTEM_EVENTS[capturedEvent]
+                    if not channel and not isSystem then return end
+                    if isSystem and not WoWTranslateDB.translateSystemMessages then return end
 
-                -- Check for item links and ensure items are cached before processing
-                local itemIds = ExtractItemIds(text)
-                if table.getn(itemIds) > 0 then
-                    -- Pass true to trigger cache via SetHyperlink for uncached items
-                    local allCached, uncachedIds = CheckItemCache(itemIds, true)
-
-                    if not allCached then
-                        -- Queue message and wait for item cache
-                        itemCacheCounter = itemCacheCounter + 1
-                        local cacheId = tostring(itemCacheCounter)
-
-                        DebugLog("Waiting for item cache:", table.getn(uncachedIds), "items")
-
-                        itemCacheQueue[cacheId] = {
-                            frame = self,
-                            originalAddMessage = frameOriginalAddMessage,
-                            text = text,
-                            itemIds = itemIds,
-                            r = r,
-                            g = g,
-                            b = b,
-                            id = id,
-                            holdTime = holdTime,
-                            timestamp = GetTime(),
-                            retries = 0
-                        }
-                        return  -- Don't display yet, will be handled by cache poller
+                    if channel then
+                        local inChannels = WoWTranslateDB.incomingChannels
+                        if inChannels and not inChannels[channel] then return end
                     end
-                end
 
-                -- Split into segments (text and hyperlinks)
-                local segments = SplitIntoSegments(text)
+                    -- arg1 for CHAT_MSG_* events is the raw message body
+                    if not capturedArg1 or capturedArg1 == "" then return end
 
-                DebugLog("Segments found:", table.getn(segments))
-                for idx, seg in ipairs(segments) do
-                    DebugLog("  Seg", idx, seg.type, ":", string.sub(seg.content, 1, 60))
-                end
+                    local detectedLang = DetectSourceLanguage(capturedArg1)
+                    DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
+                    if not detectedLang then return end
 
-                -- Check if there's Chinese text to translate (outside hyperlinks)
-                if not HasTranslatableContent(segments) then
-                    -- All Chinese is inside hyperlinks - show original
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
+                    -- Sender prefix so translation line is self-contained
+                    local senderPrefix = ""
+                    if capturedArg2 and capturedArg2 ~= "" then
+                        senderPrefix = capturedArg2 .. ": "
+                    end
 
-                -- Check if credits are exhausted FIRST - if so, pass through original text
-                -- This skips both cache and API to show untranslated text
-                if WoWTranslate_API and WoWTranslate_API.IsCreditsExhausted() then
-                    DebugLog("Credits exhausted, passing through original (no cache, no API)")
-                    WoWTranslate_API.ShowCreditWarningIfNeeded()
-                    frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
-                    return
-                end
+                    -- Cache hit: show translation immediately
+                    local cached, found = WoWTranslate_CacheGet(capturedArg1)
+                    if found then
+                        DebugLog("Cache hit")
+                        capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. cached)
+                        return
+                    end
 
-                -- Build text to send to translation API
-                local textToTranslate = BuildTranslatableText(segments)
+                    -- Glossary exact match (whole message is a known term)
+                    local glossaryResult = WoWTranslate_CheckGlossaryExact(capturedArg1)
+                    if glossaryResult then
+                        DebugLog("Glossary exact:", glossaryResult)
+                        WoWTranslate_CacheSave(capturedArg1, glossaryResult)
+                        capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. glossaryResult)
+                        return
+                    end
 
-                DebugLog("To translate:", string.sub(textToTranslate, 1, 50))
+                    -- Glossary partial: substitute known terms before (or instead of) API
+                    local textToTranslate = capturedArg1
+                    local partialResult = WoWTranslate_CheckGlossaryPartial(capturedArg1)
+                    if partialResult then
+                        if not DetectSourceLanguage(partialResult) then
+                            -- All CJK resolved by glossary, no API needed
+                            DebugLog("Glossary full partial:", partialResult)
+                            WoWTranslate_CacheSave(capturedArg1, partialResult)
+                            capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. partialResult)
+                            return
+                        end
+                        -- Some CJK remains; send pre-processed text to API
+                        textToTranslate = partialResult
+                        DebugLog("Glossary pre-processed, sending to API")
+                    end
 
-                -- Check cache first
-                local cached, found = WoWTranslate_CacheGet(text)
-                if found then
-                    DebugLog("Cache hit")
-                    WoWTranslate_API.TrackCacheHit(string.len(text))
-                    frameOriginalAddMessage(self, cached, r, g, b, id, holdTime)
-                    return
-                end
-
-                -- Need API translation
-                if WoWTranslate_API and WoWTranslate_API.IsAvailable() then
-                    messageCounter = messageCounter + 1
-                    local msgId = tostring(messageCounter)
-
-                    pendingMessages[msgId] = {
-                        frame = self,
-                        originalAddMessage = frameOriginalAddMessage,
-                        originalText = text,
-                        segments = segments,
-                        r = r,
-                        g = g,
-                        b = b,
-                        id = id,
-                        holdTime = holdTime,
-                        timestamp = GetTime()
-                    }
-
-                    DebugLog("Queued for API:", msgId)
+                    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+                        if not dllWarnShown then
+                            dllWarnShown = true
+                            capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] DLL not connected - run /wt status|r")
+                        end
+                        return
+                    end
 
                     WoWTranslate_API.Translate(textToTranslate, function(translation, err)
-                        local pending = pendingMessages[msgId]
-                        if pending then
-                            pendingMessages[msgId] = nil
-
-                            if translation then
-                                DebugLog("API returned:", string.sub(translation, 1, 50))
-
-                                -- Reconstruct with original hyperlinks
-                                local finalText = ReconstructMessage(pending.segments, translation)
-
-                                DebugLog("Final:", string.sub(finalText, 1, 100))
-
-                                -- Debug: Check if links still have proper structure
-                                if string.find(finalText, "|H") and string.find(finalText, "|h") then
-                                    DebugLog("Final has |H and |h markers - link structure OK")
-                                else
-                                    DebugLog("WARNING: Final missing link markers!")
-                                end
-
-                                WoWTranslate_CacheSave(pending.originalText, finalText)
-                                pending.originalAddMessage(pending.frame, finalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
-                            else
-                                DebugLog("API error:", err)
-                                -- Check for credit-related errors and show warning
-                                if err and (string.find(err, "INSUFFICIENT_CREDITS") or string.find(err, "Insufficient credits")) then
-                                    if originalAddMessage then
-                                        originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] Out of credits! Contact the addon author to add more credits.|r")
-                                    end
-                                elseif err and (string.find(err, "INVALID_API_KEY") or string.find(err, "Invalid API key")) then
-                                    if originalAddMessage then
-                                        originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] Invalid API key! Check your key in /wt show|r")
-                                    end
-                                end
-                                pending.originalAddMessage(pending.frame, pending.originalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
-                            end
+                        if translation and translation ~= "" then
+                            DebugLog("Translation:", string.sub(translation, 1, 50))
+                            WoWTranslate_CacheSave(capturedArg1, translation)
+                            capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. translation)
+                        else
+                            DebugLog("Translation error:", tostring(err))
                         end
-                    end)
+                    end, detectedLang)
+                end)
 
-                    return
-                else
-                    DebugLog("DLL not available")
-                end
-
-                frameOriginalAddMessage(self, text, r, g, b, id, holdTime)
+                DebugLog("Hooked", frameName, "via SetScript")
             end
-
-            DebugLog("Hooked", frameName)
         end
     end
 end
@@ -952,13 +952,6 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip if credits are exhausted
-    if WoWTranslate_API.IsCreditsExhausted() then
-        DebugLog("Credits exhausted, sending original")
-        WoWTranslate_API.ShowCreditWarningIfNeeded()
-        return originalSendChatMessage(msg, chatType, language, channel)
-    end
-
     -- Split message into segments (text and hyperlinks) to preserve links
     local segments = SplitIntoSegments(msg)
     DebugLog("Outgoing segments:", table.getn(segments))
@@ -1003,16 +996,21 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
             local reconstructed = ReconstructMessage(queued.segments, translation)
             DebugLog("Outgoing reconstructed:", reconstructed)
 
-            -- Build message with prefix (use pre-translated for default prefix)
-            local userPrefix = WoWTranslateDB.outgoingPrefix or DEFAULT_PREFIX
-            local prefix
-            if userPrefix == DEFAULT_PREFIX then
-                local targetLang = WoWTranslateDB.outgoingToLang or "zh"
-                prefix = TRANSLATED_PREFIXES[targetLang] or userPrefix
+            -- Build message, optionally prepending the prefix
+            local finalMsg
+            if WoWTranslateDB.outgoingPrefixEnabled then
+                local userPrefix = WoWTranslateDB.outgoingPrefix or DEFAULT_PREFIX
+                local prefix
+                if userPrefix == DEFAULT_PREFIX then
+                    local targetLang = WoWTranslateDB.outgoingToLang or "zh"
+                    prefix = TRANSLATED_PREFIXES[targetLang] or userPrefix
+                else
+                    prefix = userPrefix
+                end
+                finalMsg = prefix .. " " .. reconstructed
             else
-                prefix = userPrefix
+                finalMsg = reconstructed
             end
-            local finalMsg = prefix .. " " .. reconstructed
 
             -- Truncate if over 255 bytes (WoW chat limit)
             if string.len(finalMsg) > 255 then
@@ -1120,15 +1118,6 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         WoWTranslateDB.enabled = false
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Disabled|r")
 
-    elseif cmd == "key" and arg then
-        WoWTranslateDB.apiKey = arg
-        local success, err = WoWTranslate_API.SetKey(arg)
-        if success then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] API key set|r")
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Failed to set API key: " .. (err or "unknown") .. "|r")
-        end
-
     elseif cmd == "status" then
         local dllStatus = WoWTranslate_API.IsAvailable()
             and "|cFF00FF00Connected|r"
@@ -1156,20 +1145,8 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
             and "|cFF00FF00ACTIVE|r"
             or "|cFFFF0000INACTIVE|r"
 
-        -- Get credits info
-        local creditsStr = WoWTranslate_API.GetCreditsFormatted and WoWTranslate_API.GetCreditsFormatted() or "Unknown"
-        local creditsLow = WoWTranslate_API.IsCreditsLow and WoWTranslate_API.IsCreditsLow()
-        local creditsExhausted = WoWTranslate_API.IsCreditsExhausted and WoWTranslate_API.IsCreditsExhausted()
-
         DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Status:")
         DEFAULT_CHAT_FRAME:AddMessage("  DLL: " .. dllStatus)
-        if creditsExhausted then
-            DEFAULT_CHAT_FRAME:AddMessage("  Credits: |cFFFF0000" .. creditsStr .. " (EXHAUSTED - translation disabled)|r")
-        elseif creditsLow then
-            DEFAULT_CHAT_FRAME:AddMessage("  Credits: |cFFFF0000" .. creditsStr .. " (LOW!)|r")
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("  Credits: |cFF00FF00" .. creditsStr .. "|r")
-        end
         DEFAULT_CHAT_FRAME:AddMessage("  Incoming (CN->EN): " .. (WoWTranslateDB.enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
         DEFAULT_CHAT_FRAME:AddMessage("  Outgoing (EN->CN): " .. outgoingStatus)
         DEFAULT_CHAT_FRAME:AddMessage("  Outgoing Hook: " .. hookStatus)
@@ -1360,6 +1337,34 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
     -- =====================================================================
     -- CONFIGURATION UI COMMANDS
     -- =====================================================================
+    elseif cmd == "hooktest" then
+        -- Check whether SetScript("OnEvent") hooks are installed on each chat frame
+        local hookedCount = 0
+        local totalFrames = 0
+        for i = 1, NUM_CHAT_WINDOWS do
+            local f = getglobal("ChatFrame" .. i)
+            if f then
+                totalFrames = totalFrames + 1
+                if f.WoWTranslateHooked then
+                    hookedCount = hookedCount + 1
+                end
+            end
+        end
+
+        if hookedCount == 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[WT hooktest] NO frames hooked (0/" .. totalFrames .. ")|r")
+        elseif hookedCount < totalFrames then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[WT hooktest] Partially hooked: " .. hookedCount .. "/" .. totalFrames .. " frames|r")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WT hooktest] All " .. hookedCount .. "/" .. totalFrames .. " frames hooked via SetScript(OnEvent)|r")
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("[WT hooktest] Hook call count: " .. tostring(hookCallCount))
+        if hookCallCount == 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[WT hooktest] Count=0: hook installed but no events fired yet (or all events filtered)|r")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WT hooktest] Hook is firing correctly|r")
+        end
+
     elseif cmd == "show" or cmd == "config" or cmd == "options" then
         WoWTranslate_ShowConfig()
 
@@ -1371,7 +1376,6 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /wt show - Open configuration panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt hide - Close configuration panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt on|off - Enable/disable incoming translation")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt key <apikey> - Set API key")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt status - Show status")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt clearcache - Clear cache")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt debug - Toggle debug mode")
@@ -1419,6 +1423,15 @@ local function InitializeSettings()
     end
 
     DEBUG_MODE = WoWTranslateDB.debugMode or false
+
+    -- Migrate: remove old apiKey and incomingFromLang fields
+    WoWTranslateDB.apiKey = nil
+    WoWTranslateDB.incomingFromLang = nil
+
+    -- Migrate: add enabledSourceLangs if missing
+    if WoWTranslateDB.enabledSourceLangs == nil then
+        WoWTranslateDB.enabledSourceLangs = { zh=true, ja=true, ko=true, ru=true }
+    end
 end
 
 local function OnAddonLoaded()
@@ -1433,42 +1446,18 @@ local function OnAddonLoaded()
 
     local dllOk = WoWTranslate_API.CheckDLL()
 
-    if dllOk and WoWTranslateDB.apiKey and WoWTranslateDB.apiKey ~= "" then
-        WoWTranslate_API.SetKey(WoWTranslateDB.apiKey)
-    end
-
-    if dllOk then
-        WoWTranslate_API.FetchCredits()  -- Auto-starts polling via demand-based system
-    end
-
     local glossaryCount = WoWTranslate_GetGlossaryCount()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v0.12 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v0.14 - " .. dllStatus .. " | /wt show")
 end
 
 local function OnPlayerLogin()
     HookChatFrames()
 
-    -- Hook ChatFrame_OnEvent to detect incoming channel and system events
-    local originalChatFrameOnEvent = ChatFrame_OnEvent
-    ChatFrame_OnEvent = function(event)
-        currentIncomingChannel = EVENT_TO_CHANNEL[event]
-        currentIsSystemEvent = SYSTEM_EVENTS[event] or false
-        originalChatFrameOnEvent(event)
-        currentIncomingChannel = nil
-        currentIsSystemEvent = false
-    end
-
     if not WoWTranslate_API.IsAvailable() then
         WoWTranslate_API.CheckDLL()
-        if WoWTranslate_API.IsAvailable() then
-            if WoWTranslateDB and WoWTranslateDB.apiKey and WoWTranslateDB.apiKey ~= "" then
-                WoWTranslate_API.SetKey(WoWTranslateDB.apiKey)
-            end
-            WoWTranslate_API.FetchCredits()  -- Auto-starts polling via demand-based system
-        end
     end
 
     -- Install outgoing hook if enabled
@@ -1522,16 +1511,19 @@ end)
 
 local function ProcessItemCacheMessage(queued)
     local text = queued.text
+    local detectedLang = DetectSourceLanguage(text) or "zh"
 
-    -- Split into segments (text and hyperlinks) - items should be cached now
-    local segments = SplitIntoSegments(text)
+    -- Split header from body (same approach as the main hook)
+    local headerText, msgBody = SplitHeaderAndMessage(text)
+
+    -- Segment only the message body
+    local segments = SplitIntoSegments(msgBody)
 
     DebugLog("Processing cached item message, segments:", table.getn(segments))
 
-    -- Check if there's Chinese text to translate (outside hyperlinks)
     if not HasTranslatableContent(segments) then
-        -- All Chinese is inside hyperlinks - show with localized links
-        local result = ""
+        -- Body has no translatable content; show with localized hyperlinks
+        local result = headerText
         for _, seg in ipairs(segments) do
             result = result .. seg.content
         end
@@ -1539,68 +1531,49 @@ local function ProcessItemCacheMessage(queued)
         return
     end
 
-    -- Check if credits are exhausted FIRST - if so, pass through original (no cache, no API)
-    if WoWTranslate_API and WoWTranslate_API.IsCreditsExhausted() then
-        DebugLog("Credits exhausted, passing through item message (no cache, no API)")
-        WoWTranslate_API.ShowCreditWarningIfNeeded()
-        queued.originalAddMessage(queued.frame, text, queued.r, queued.g, queued.b, queued.id, queued.holdTime)
-        return
-    end
-
-    -- Build text to send to translation API
     local textToTranslate = BuildTranslatableText(segments)
 
-    -- Check cache first
-    local cached, found = WoWTranslate_CacheGet(text)
+    local cached, found = WoWTranslate_CacheGet(msgBody)
     if found then
         DebugLog("Cache hit for item message")
-        WoWTranslate_API.TrackCacheHit(string.len(text))
-        queued.originalAddMessage(queued.frame, cached, queued.r, queued.g, queued.b, queued.id, queued.holdTime)
+        local finalText = headerText .. ReconstructMessage(segments, cached)
+        queued.originalAddMessage(queued.frame, finalText, queued.r, queued.g, queued.b, queued.id, queued.holdTime)
         return
     end
 
-    -- Need API translation
     if WoWTranslate_API and WoWTranslate_API.IsAvailable() then
+        DebugLog("Requesting translation for item message")
         messageCounter = messageCounter + 1
         local msgId = tostring(messageCounter)
-
         pendingMessages[msgId] = {
             frame = queued.frame,
             originalAddMessage = queued.originalAddMessage,
             originalText = text,
+            headerText = headerText,
+            msgBody = msgBody,
             segments = segments,
-            r = queued.r,
-            g = queued.g,
-            b = queued.b,
-            id = queued.id,
-            holdTime = queued.holdTime,
+            r = queued.r, g = queued.g, b = queued.b,
+            id = queued.id, holdTime = queued.holdTime,
             timestamp = GetTime()
         }
-
-        DebugLog("Queued item message for API:", msgId)
-
         WoWTranslate_API.Translate(textToTranslate, function(translation, err)
             local pending = pendingMessages[msgId]
             if pending then
                 pendingMessages[msgId] = nil
-
-                if translation then
+                if translation and translation ~= "" then
                     DebugLog("API returned for item msg:", string.sub(translation, 1, 50))
-                    local finalText = ReconstructMessage(pending.segments, translation)
-                    WoWTranslate_CacheSave(pending.originalText, finalText)
-                    pending.originalAddMessage(pending.frame, finalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
+                    local finalText = pending.headerText .. ReconstructMessage(pending.segments, translation)
+                    WoWTranslate_CacheSave(pending.msgBody, translation)
+                    pcall(pending.originalAddMessage, pending.frame, finalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
                 else
-                    DebugLog("API error for item msg:", err)
-                    pending.originalAddMessage(pending.frame, pending.originalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
+                    DebugLog("API error for item msg:", tostring(err))
+                    pcall(pending.originalAddMessage, pending.frame, pending.originalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
                 end
             end
-        end)
+        end, detectedLang)
     else
-        -- No API, just show with localized links
-        local result = ""
-        for _, seg in ipairs(segments) do
-            result = result .. seg.content
-        end
+        local result = headerText
+        for _, seg in ipairs(segments) do result = result .. seg.content end
         queued.originalAddMessage(queued.frame, result, queued.r, queued.g, queued.b, queued.id, queued.holdTime)
     end
 end
