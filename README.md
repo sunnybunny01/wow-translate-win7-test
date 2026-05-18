@@ -19,12 +19,12 @@
 |---------|-------------|
 | 🌍 **Multi-Language** | Chinese, Japanese, Korean, Russian → English (and reverse) |
 | 📚 **WoW Glossary** | 500+ gaming terms translated correctly ("老克" → "Kel'Thuzad", not "Old gram") |
-| ⚡ **Instant Cache** | Previously seen translations are instant and free |
+| ⚡ **Instant Cache** | Previously seen translations are instant |
 | 💬 **Outgoing Translation** | Type in English, send in Chinese (or other languages) |
 | 🔗 **Hyperlink Safe** | Player names, items, and quests stay clickable |
 | 🗺️ **Minimap Button** | One-click access to settings, draggable around the minimap |
 | 📺 **Channel Filtering** | Choose exactly which channels get translated |
-| 💤 **AFK Auto-Pause** | Saves credits by pausing translation while you're AFK |
+| 💤 **AFK Auto-Pause** | Pausing translation while you're AFK |
 
 ---
 
@@ -52,16 +52,6 @@ YourWoWFolder/
 
 > **Note:** If `dlls.txt` doesn't exist, create it and add `WoWTranslate.dll` on the first line.
 
-### 3. Get API Key
-
-API keys are distributed by the addon author. Each key comes with credits for translation.
-
-### 4. Configure In-Game
-
-```
-/wt key WT-XXXX-XXXX        Set your API key
-```
-
 **Done!** A minimap button (scroll icon) appears — click it to open settings. Chat messages will now appear translated.
 
 ---
@@ -72,9 +62,8 @@ API keys are distributed by the addon author. Each key comes with credits for tr
 |---------|-------------|
 | `/wt show` | Open configuration panel |
 | `/wt on` / `/wt off` | Enable/disable translation |
-| `/wt key <key>` | Set your API key |
 | `/wt status` | Show status and credits |
-| `/wt test 你好` | Test translation |
+| `/wt test` | Test translation |
 | `/wt outgoing on` | Enable outgoing translation |
 | `/wt clearcache` | Clear translation cache |
 
@@ -97,13 +86,13 @@ Check your balance anytime with `/wt status` or `/wt show`.
 ```
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │  Glossary   │ →  │    Cache    │ →  │  Translate  │
-│  (instant)  │    │   (free)    │    │  (credits)  │
+│  (instant)  │    │   (free)    │    │ (also free) |
 └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
 1. **Glossary** — WoW terms translated instantly (raids, bosses, slang)
 2. **Cache** — Seen before? Instant and free
-3. **API** — New text uses credits
+3. **Google Translate**
 
 ---
 
@@ -114,7 +103,7 @@ Open settings with `/wt show`:
 - **Incoming**: What language to translate FROM (Chinese, Japanese, Korean, Russian)
 - **Outgoing**: Enable translation for Say, Party, Guild, Whisper, etc.
 - **Channel Filtering**: Toggle individual channels (Say, Yell, Whisper, Party, Guild, Raid, Battleground, World/Local) for both incoming and outgoing
-- **AFK Pause**: Translation pauses while AFK to save credits (on by default, configurable)
+- **AFK Pause**: Translation pauses while AFK (on by default, configurable)
 
 ---
 
@@ -123,7 +112,6 @@ Open settings with `/wt show`:
 | Problem | Solution |
 |---------|----------|
 | DLL not loading | Ensure `WoWTranslate.dll` is next to `WoW.exe` and listed in `dlls.txt` |
-| "Out of credits" | Your API key needs more credits — contact whoever provided your key |
 | No translations | Run `/wt status` to check DLL loaded, then `/wt test 你好` |
 | Launcher issues | Run `WoW.exe` directly instead of through a launcher |
 
