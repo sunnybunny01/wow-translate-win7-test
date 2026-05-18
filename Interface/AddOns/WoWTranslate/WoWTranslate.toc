@@ -2,7 +2,7 @@
 ## Title: WoWTranslate
 ## Notes: Real-time chat translation for WoW 1.12 (free, no API key needed)
 ## Version: 0.14
-## Author: WoWTranslate Team
+## Author: WoWTranslate Team, belthazor
 ## SavedVariables: WoWTranslateDB WoWTranslateCache WoWTranslateDebugLog
 
 WoWTranslate_Glossary.lua
