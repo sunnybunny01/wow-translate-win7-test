@@ -943,6 +943,11 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
+    -- Skip macro directives (#showtooltip, #show, etc.)
+    if string.sub(msg, 1, 1) == "#" then
+        return originalSendChatMessage(msg, chatType, language, channel)
+    end
+
     -- Skip if already contains target language (don't double-translate)
     if ContainsOutgoingTargetLanguage(msg) then
         DebugLog("Message already contains target language, skipping outgoing translation")
