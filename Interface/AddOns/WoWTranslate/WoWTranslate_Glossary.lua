@@ -62,6 +62,11 @@ WoWTranslateGlossary["蓝龙"] = "Azuregos"
 WoWTranslateGlossary["卡扎克"] = "Kazzak"
 WoWTranslateGlossary["绿龙"] = "Dragons of Nightmare"
 
+-- Mount Hyjal (TBC/Custom)
+WoWTranslateGlossary["海山"] = "Mount Hyjal"
+WoWTranslateGlossary["海加尔山"] = "Mount Hyjal"
+WoWTranslateGlossary["海山螺丝厂"] = "Mount Hyjal (farm)"
+
 -- ============================================================================
 -- DUNGEONS (50+ entries)
 -- ============================================================================
@@ -104,18 +109,21 @@ WoWTranslateGlossary["黑深"] = "Blackrock Depths"
 
 -- Lower Blackrock Spire
 WoWTranslateGlossary["黑石塔下层"] = "Lower Blackrock Spire"
+WoWTranslateGlossary["黑下"] = "LBRS"
 WoWTranslateGlossary["LBRS"] = "Lower Blackrock Spire"
 WoWTranslateGlossary["lbrs"] = "Lower Blackrock Spire"
 WoWTranslateGlossary["下层"] = "LBRS"
 
 -- Upper Blackrock Spire
 WoWTranslateGlossary["黑石塔上层"] = "Upper Blackrock Spire"
+WoWTranslateGlossary["黑上"] = "UBRS"
 WoWTranslateGlossary["UBRS"] = "Upper Blackrock Spire"
 WoWTranslateGlossary["ubrs"] = "Upper Blackrock Spire"
 WoWTranslateGlossary["上层"] = "UBRS"
 
 -- Deadmines
 WoWTranslateGlossary["死亡矿井"] = "Deadmines"
+WoWTranslateGlossary["死亡矿坑"] = "Deadmines"
 WoWTranslateGlossary["VC"] = "Deadmines"
 WoWTranslateGlossary["vc"] = "Deadmines"
 WoWTranslateGlossary["死矿"] = "Deadmines"
@@ -166,23 +174,41 @@ WoWTranslateGlossary["mara"] = "Maraudon"
 
 -- Sunken Temple
 WoWTranslateGlossary["沉没的神庙"] = "Sunken Temple"
+WoWTranslateGlossary["塔哈克神庙"] = "Sunken Temple"
 WoWTranslateGlossary["ST"] = "Sunken Temple"
 WoWTranslateGlossary["st"] = "Sunken Temple"
+WoWTranslateGlossary["SK"] = "Sunken Temple"
+WoWTranslateGlossary["sk"] = "Sunken Temple"
 WoWTranslateGlossary["神庙"] = "Sunken Temple"
 
 -- Ragefire Chasm
 WoWTranslateGlossary["怒焰裂谷"] = "Ragefire Chasm"
 WoWTranslateGlossary["RFC"] = "Ragefire Chasm"
 WoWTranslateGlossary["rfc"] = "Ragefire Chasm"
+WoWTranslateGlossary["RF"] = "Ragefire Chasm"
+WoWTranslateGlossary["rf"] = "Ragefire Chasm"
 
 -- Stockades
 WoWTranslateGlossary["监狱"] = "Stockades"
+WoWTranslateGlossary["大监狱"] = "Stockades"
+WoWTranslateGlossary["暴风监狱"] = "Stockades"
+WoWTranslateGlossary["刷马鞭"] = "Stockades (whip farm)"
 WoWTranslateGlossary["STOCKS"] = "Stockades"
 
 -- Blackfathom Deeps
 WoWTranslateGlossary["黑暗深渊"] = "Blackfathom Deeps"
 WoWTranslateGlossary["BFD"] = "Blackfathom Deeps"
 WoWTranslateGlossary["bfd"] = "Blackfathom Deeps"
+
+-- TBC/Custom Server Dungeons (TurtleWoW)
+WoWTranslateGlossary["时光之穴"] = "Black Morass"
+WoWTranslateGlossary["黑色沼泽"] = "Black Morass"
+WoWTranslateGlossary["KLZ"] = "Karazhan"
+WoWTranslateGlossary["klz"] = "Karazhan"
+WoWTranslateGlossary["KLZ墓穴"] = "Karazhan Crypts"
+WoWTranslateGlossary["卡拉赞"] = "Karazhan"
+WoWTranslateGlossary["暴风城地下室"] = "Stormwind Vault"
+WoWTranslateGlossary["大监狱地下"] = "Stormwind Vault"
 
 -- ============================================================================
 -- CLASSES (40+ entries)
@@ -371,6 +397,9 @@ WoWTranslateGlossary["分G"] = "GDKP split"
 WoWTranslateGlossary["底价"] = "Min bid"
 WoWTranslateGlossary["加价"] = "Bid increment"
 WoWTranslateGlossary["拍卖"] = "Auction"
+WoWTranslateGlossary["许愿团"] = "SR run (make-a-wish raid)"
+WoWTranslateGlossary["SR团"] = "SR run"
+WoWTranslateGlossary["许愿"] = "SR (soft reserve)"
 
 -- Raid Actions
 WoWTranslateGlossary["灭团"] = "Wipe"
@@ -548,6 +577,14 @@ WoWTranslateGlossary["OT"] = "OT (Off-tank)"
 WoWTranslateGlossary["MT"] = "MT (Main Tank)"
 WoWTranslateGlossary["主坦"] = "Main Tank"
 WoWTranslateGlossary["副坦"] = "Off-Tank"
+WoWTranslateGlossary["耐力"] = "Stamina"
+WoWTranslateGlossary["力量"] = "Strength"
+WoWTranslateGlossary["敏捷"] = "Agility"
+WoWTranslateGlossary["智力"] = "Intellect"
+WoWTranslateGlossary["精神"] = "Spirit"
+WoWTranslateGlossary["珠宝"] = "Gem/Jewelcrafting"
+WoWTranslateGlossary["宝石切割"] = "Gem cut"
+WoWTranslateGlossary["钻石"] = "Diamond (gem)"
 
 -- ============================================================================
 -- COMMON SLANG & EXPRESSIONS (60+ entries)
@@ -561,6 +598,8 @@ WoWTranslateGlossary["再见"] = "Goodbye"
 WoWTranslateGlossary["拜拜"] = "Bye"
 WoWTranslateGlossary["88"] = "Bye"
 WoWTranslateGlossary["886"] = "Bye bye"
+WoWTranslateGlossary["太厉害了"] = "That's awesome!"
+WoWTranslateGlossary["666了"] = "Incredibly well played!"
 
 -- Responses
 WoWTranslateGlossary["谢谢"] = "Thanks"
@@ -645,6 +684,25 @@ WoWTranslateGlossary["av"] = "Alterac Valley"
 WoWTranslateGlossary["军衔"] = "Rank"
 WoWTranslateGlossary["荣誉"] = "Honor"
 WoWTranslateGlossary["击杀"] = "Kill"
+
+-- Arathi Basin (AB) nodes
+WoWTranslateGlossary["AB矿"] = "AB Mine"
+WoWTranslateGlossary["AB铁"] = "AB Blacksmith"
+WoWTranslateGlossary["AB木"] = "AB Lumber Mill"
+WoWTranslateGlossary["铁匠铺"] = "Blacksmith (AB)"
+WoWTranslateGlossary["锯木场"] = "Lumber Mill (AB)"
+WoWTranslateGlossary["金矿"] = "Gold Mine (AB)"
+WoWTranslateGlossary["马厩"] = "Stables (AB)"
+WoWTranslateGlossary["农场"] = "Farm (AB)"
+
+-- Warsong Gulch (WSG) positions
+WoWTranslateGlossary["隧道"] = "Tunnel (WSG)"
+WoWTranslateGlossary["坡道"] = "Ramp (WSG)"
+WoWTranslateGlossary["墓地"] = "Graveyard"
+WoWTranslateGlossary["旗帜"] = "Flag"
+WoWTranslateGlossary["拿旗"] = "Grab the flag"
+WoWTranslateGlossary["还旗"] = "Return the flag"
+WoWTranslateGlossary["旗手"] = "Flag carrier"
 
 -- Professions
 WoWTranslateGlossary["采矿"] = "Mining"

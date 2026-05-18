@@ -813,6 +813,9 @@ local function HookChatFrames()
                     -- arg1 for CHAT_MSG_* events is the raw message body
                     if not capturedArg1 or capturedArg1 == "" then return end
 
+                    -- Skip macro directives (#showtooltip, #show, etc.)
+                    if string.sub(capturedArg1, 1, 1) == "#" then return end
+
                     local detectedLang = DetectSourceLanguage(capturedArg1)
                     DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
                     if not detectedLang then return end
