@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-1.12-blue" alt="WoW 1.12">
-  <img src="https://img.shields.io/badge/version-0.14-green" alt="Version 0.14">
+  <img src="https://img.shields.io/badge/version-1.0-green" alt="Version 1.0">
   <img src="https://img.shields.io/github/license/sanjaygbhat/wow-translate" alt="License">
 </p>
 
@@ -17,14 +17,15 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🌍 **Multi-Language** | Chinese, Japanese, Korean, Russian → English (and reverse) |
-| 📚 **WoW Glossary** | 500+ gaming terms translated correctly ("老克" → "Kel'Thuzad", not "Old gram") |
+| 🌍 **Multi-Language** | Chinese, Japanese, Korean, Russian → English (and vice-versa) |
+| 📚 **WoW Glossary** | 550+ gaming terms translated correctly ("老克" → "Kel'Thuzad", not "Old gram") |
 | ⚡ **Instant Cache** | Previously seen translations are instant |
 | 💬 **Outgoing Translation** | Type in English, send in Chinese (or other languages) |
-| 🔗 **Hyperlink Safe** | Player names, items, and quests stay clickable |
+| 🔗 **Hyperlink Safe** | Player names, items, and quests stay clickable and are translated|
+| 🔗 **Hyperlink Caching** | Quests are auto translated internally from WoW, for Items a cache is populated|
 | 🗺️ **Minimap Button** | One-click access to settings, draggable around the minimap |
 | 📺 **Channel Filtering** | Choose exactly which channels get translated |
-| 💤 **AFK Auto-Pause** | Pausing translation while you're AFK |
+| 💤 **AFK Auto-Pause function** | Pausing translation while you're AFK |
 
 ---
 
@@ -92,8 +93,8 @@ Open settings with `/wt show`:
 
 - **Incoming**: What language to translate FROM (Chinese, Japanese, Korean, Russian)
 - **Outgoing**: Enable translation for Say, Party, Guild, Whisper, etc.
-- **Channel Filtering**: Toggle individual channels (Say, Yell, Whisper, Party, Guild, Raid, Battleground, World/Local) for both incoming and outgoing
-- **AFK Pause**: Translation pauses while AFK (on by default, configurable)
+- **Channel Filtering**: Toggle individual channels (Say, Yell, Whisper, Party, Guild, Raid, Battleground, World/Local, Hardcore) for both incoming and outgoing
+- **AFK Pause**: Translation pauses while AFK (off by default, configurable)
 
 ---
 
@@ -102,7 +103,7 @@ Open settings with `/wt show`:
 | Problem | Solution |
 |---------|----------|
 | DLL not loading | Ensure `WoWTranslate.dll` is next to `WoW.exe` and listed in `dlls.txt` |
-| No translations | Run `/wt status` to check DLL loaded, then `/wt test 你好` |
+| No translations | Run `/wt status` to check DLL loaded, then `/wt test` |
 | Launcher issues | Run `WoW.exe` directly instead of through a launcher |
 
 ---
