@@ -16,6 +16,7 @@ local addonLoaded = false
 local originalAddMessage = nil
 local playerIsAFK = false
 local dllWarnShown = false
+local translationErrWarnShown = false
 local hookCallCount = 0         -- incremented every time any hook body executes
 
 local pendingMessages = {}
@@ -870,10 +871,15 @@ local function HookChatFrames()
                     WoWTranslate_API.Translate(textToTranslate, function(translation, err)
                         if translation and translation ~= "" then
                             DebugLog("Translation:", string.sub(translation, 1, 50))
+                            translationErrWarnShown = false  -- reset on success
                             WoWTranslate_CacheSave(capturedArg1, translation)
                             capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. translation)
                         else
                             DebugLog("Translation error:", tostring(err))
+                            if not translationErrWarnShown then
+                                translationErrWarnShown = true
+                                capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] Translation failing (" .. tostring(err) .. ") - try /wt reset|r")
+                            end
                         end
                     end, detectedLang)
                 end)
@@ -1345,6 +1351,19 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
     -- =====================================================================
     -- CONFIGURATION UI COMMANDS
     -- =====================================================================
+    elseif cmd == "reset" then
+        -- Recovery command for when translations stop after alt-tab or DLL stall
+        local cleared = WoWTranslate_API.GetPendingCount()
+        WoWTranslate_API.ClearPending()
+        dllWarnShown = false
+        translationErrWarnShown = false
+        local ok = WoWTranslate_API.CheckDLL()
+        if ok then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Reset OK — DLL responding, cleared " .. cleared .. " stale request(s)|r")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Reset: DLL not responding — try /reload|r")
+        end
+
     elseif cmd == "hooktest" then
         -- Check whether SetScript("OnEvent") hooks are installed on each chat frame
         local hookedCount = 0
@@ -1385,6 +1404,7 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /wt hide - Close configuration panel")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt on|off - Enable/disable incoming translation")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt status - Show status")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt reset - Recover if translations stop after alt-tab")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt clearcache - Clear cache")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt debug - Toggle debug mode")
         DEFAULT_CHAT_FRAME:AddMessage("  -- Outgoing --")
@@ -1480,6 +1500,7 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 
@@ -1488,6 +1509,11 @@ eventFrame:SetScript("OnEvent", function()
         OnAddonLoaded()
     elseif event == "PLAYER_LOGIN" then
         OnPlayerLogin()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Re-check DLL after any loading screen (zone in, /reload, etc.)
+        if not WoWTranslate_API.IsAvailable() then
+            WoWTranslate_API.CheckDLL()
+        end
     elseif event == "PLAYER_FLAGS_CHANGED" and arg1 == "player" then
         if UnitIsAFK then
             playerIsAFK = (UnitIsAFK("player") == 1) or (UnitIsAFK("player") == true)

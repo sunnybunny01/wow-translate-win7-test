@@ -11,6 +11,8 @@ local dllAvailable = false
 local requestCounter = 0
 local pollFrame = nil
 local activePendingCount = 0
+local healthCheckElapsed = 0
+local HEALTH_CHECK_INTERVAL = 60  -- Re-ping DLL every 60s; wakes HTTP client after alt-tab
 
 -- Constants
 local POLL_INTERVAL = 0.1  -- Poll every 100ms
@@ -151,6 +153,12 @@ local function PollTranslations()
         return UnitXP("WoWTranslate", "poll")
     end)
 
+    if not success then
+        -- UnitXP call itself threw — DLL is gone or broken
+        dllAvailable = false
+        return
+    end
+
     if success and result and result ~= "" then
         -- Parse result format: "requestId|translation|error"
         local firstPipe = string.find(result, "|", 1, true)
@@ -221,6 +229,19 @@ function WoWTranslate_API.StopPolling()
     end
 end
 
+-- Passive health check: re-ping DLL every 60s so we detect silent failure and
+-- keep the DLL's HTTP connection warm (prevents alt-tab stall).
+local healthCheckFrame = CreateFrame("Frame")
+healthCheckFrame:SetScript("OnUpdate", function()
+    healthCheckElapsed = healthCheckElapsed + arg1
+    if healthCheckElapsed >= HEALTH_CHECK_INTERVAL then
+        healthCheckElapsed = 0
+        if dllAvailable then
+            WoWTranslate_API.CheckDLL()
+        end
+    end
+end)
+
 -- ============================================================================
 -- OUTGOING TRANSLATION (English -> Chinese)
 -- ============================================================================
@@ -283,6 +304,18 @@ function WoWTranslate_API.GetPendingCount()
         count = count + 1
     end
     return count
+end
+
+-- Clear all pending requests (used by /wt reset for recovery)
+function WoWTranslate_API.ClearPending()
+    for id, req in pairs(pendingRequests) do
+        if req.callback then
+            pcall(req.callback, nil, "Cleared by reset")
+        end
+        pendingRequests[id] = nil
+    end
+    activePendingCount = 0
+    WoWTranslate_API.StopPolling()
 end
 
 -- Get all pending request info (for debugging)
