@@ -51,7 +51,8 @@ YourWoWFolder/
 ```
 
 > **Note:** If `dlls.txt` doesn't exist, create it and add `WoWTranslate.dll` on the first line.
-> **Note:** You have to run via `VanillaFixes.exe` or any other WoW dll launcher.
+
+> You have to run via `VanillaFixes.exe` or any other WoW dll launcher.
 
 **Done!** A minimap button (scroll icon) appears — click it to open settings. Chat messages will now appear translated.
 
