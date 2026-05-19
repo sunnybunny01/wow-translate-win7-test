@@ -77,7 +77,7 @@ end
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
 configFrame:SetWidth(480)
-configFrame:SetHeight(720)
+configFrame:SetHeight(750)
 configFrame:SetPoint("CENTER", 0, 0)
 configFrame:SetMovable(true)
 configFrame:EnableMouse(true)
@@ -439,6 +439,11 @@ end)
 
 configFrame.elements.colorSwatch = colorSwatch
 
+-- Second color row: opt in to using the source channel's native color for the body.
+-- When checked, the custom swatch color is ignored.
+local Y_COLOR_FOLLOW = -668
+configFrame.elements.colorFollow = CreateCheckbox("Follow channel color", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
+
 -- Bottom Buttons
 local clearBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 clearBtn:SetPoint("BOTTOMLEFT", configFrame, "BOTTOMLEFT", 25, 20)
@@ -481,6 +486,7 @@ local function RefreshUI()
             e.colorSwatch:SetBackdropColor(0.5, 0.5, 0.5)
         end
     end
+    if e.colorFollow then e.colorFollow:SetChecked(cfg.translationColorFollow) end
     if e.inEnabled then e.inEnabled:SetChecked(cfg.enabled) end
     if e.afkDisable then e.afkDisable:SetChecked(cfg.disableWhileAfk) end
     if e.translateSystem then e.translateSystem:SetChecked(cfg.translateSystemMessages) end

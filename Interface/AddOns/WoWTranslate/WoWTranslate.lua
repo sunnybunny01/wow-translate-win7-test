@@ -127,7 +127,8 @@ local defaults = {
     incomingToLang = "en",
     outgoingFromLang = "en",
     outgoingToLang = "zh",
-    translationColor = "",  -- Hex RRGGBB for translated text body; empty = default chat color
+    translationColor = "",       -- Hex RRGGBB for translated text body; empty = default chat color
+    translationColorFollow = false,  -- If true, body color follows the source channel color
 }
 
 -- ============================================================================
@@ -784,6 +785,45 @@ end
 -- CHAT FRAME HOOKING
 -- ============================================================================
 
+-- Maps event to ChatTypeInfo key so we can read the native channel color.
+-- CHAT_MSG_CHANNEL requires special handling (channel slot number determines the key).
+local EVENT_TO_CHATTYPE = {
+    CHAT_MSG_SAY                 = "SAY",
+    CHAT_MSG_YELL                = "YELL",
+    CHAT_MSG_WHISPER             = "WHISPER",
+    CHAT_MSG_WHISPER_INFORM      = "WHISPER",
+    CHAT_MSG_PARTY               = "PARTY",
+    CHAT_MSG_GUILD               = "GUILD",
+    CHAT_MSG_OFFICER             = "OFFICER",
+    CHAT_MSG_RAID                = "RAID",
+    CHAT_MSG_RAID_LEADER         = "RAID",
+    CHAT_MSG_RAID_WARNING        = "RAID",
+    CHAT_MSG_BATTLEGROUND        = "BATTLEGROUND",
+    CHAT_MSG_BATTLEGROUND_LEADER = "BATTLEGROUND",
+    CHAT_MSG_HARDCORE            = "HARDCORE",
+}
+
+-- Returns a 6-char uppercase hex string from ChatTypeInfo, or nil if not found.
+local function GetChatTypeColorHex(event, channelStr)
+    local chatType = EVENT_TO_CHATTYPE[event]
+    if not chatType and event == "CHAT_MSG_CHANNEL" then
+        local _, _, cap = string.find(channelStr or "", "^(%d+)%.")
+        local num = cap and tonumber(cap)
+        chatType = num and ("CHANNEL" .. num) or "CHANNEL"
+    end
+    if chatType and ChatTypeInfo and ChatTypeInfo[chatType] then
+        local info = ChatTypeInfo[chatType]
+        local r = info.r or 1
+        local g = info.g or 1
+        local b = info.b or 1
+        return string.format("%02X%02X%02X",
+            math.floor(r * 255 + 0.5),
+            math.floor(g * 255 + 0.5),
+            math.floor(b * 255 + 0.5))
+    end
+    return nil
+end
+
 -- Per-event display tags for the [WT-X] prefix shown with each translation.
 -- CHAT_MSG_CHANNEL is handled dynamically from arg4 (channel name string).
 local EVENT_CHANNEL_TAGS = {
@@ -930,8 +970,28 @@ local function HookChatFrames(force)
                                 end
                             end
 
-                            local channelTag = GetChannelTag(capturedEvent, capturedArg4)
-                            local msgColor = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
+                            local channelTag   = GetChannelTag(capturedEvent, capturedArg4)
+                            local msgColor     = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
+                            local chanColorHex = GetChatTypeColorHex(capturedEvent, capturedArg4)
+                            -- Channel name part of the tag (everything after "WT-"), or nil for bare "WT".
+                            local chanNamePart = string.sub(channelTag, 1, 3) == "WT-" and string.sub(channelTag, 4) or nil
+
+                            local function BuildWTMsg(body)
+                                -- Prefix: [WT- in cyan, channel name in the native channel color.
+                                local prefix
+                                if chanColorHex and chanNamePart then
+                                    prefix = "|cFF00FFFF[WT-|r|cFF" .. chanColorHex .. chanNamePart .. "]|r"
+                                else
+                                    prefix = "|cFF00FFFF[" .. channelTag .. "]|r"
+                                end
+                                -- Body: use channel color when "follow" is on, else custom or default.
+                                local bodyHex = msgColor
+                                if WoWTranslateDB and WoWTranslateDB.translationColorFollow then
+                                    bodyHex = chanColorHex or ""
+                                end
+                                local displayBody = bodyHex ~= "" and ("|cFF" .. bodyHex .. body .. "|r") or body
+                                return prefix .. " " .. senderPrefix .. displayBody
+                            end
 
                             -- Split into text and hyperlink segments.
                             -- Chinese bytes in link display names (e.g. [剑]) are NOT
@@ -964,8 +1024,7 @@ local function HookChatFrames(force)
                             if found then
                                 DebugLog("Cache hit")
                                 local reconstructed = ReconstructMessage(segments, cached)
-                                local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
-                                local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                local wtMsg = BuildWTMsg(reconstructed)
                                 -- Sync path: each frame handles itself; clear shared table entry.
                                 frameTranslationTargets[capturedArg1] = nil
                                 capturedThis:AddMessage(wtMsg)
@@ -977,8 +1036,7 @@ local function HookChatFrames(force)
                                 DebugLog("Glossary exact:", glossaryResult)
                                 WoWTranslate_CacheSave(capturedArg1, glossaryResult)
                                 local reconstructed = ReconstructMessage(segments, glossaryResult)
-                                local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
-                                local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                local wtMsg = BuildWTMsg(reconstructed)
                                 frameTranslationTargets[capturedArg1] = nil
                                 capturedThis:AddMessage(wtMsg)
                                 return
@@ -991,8 +1049,7 @@ local function HookChatFrames(force)
                                     DebugLog("Glossary full partial:", partialResult)
                                     WoWTranslate_CacheSave(capturedArg1, partialResult)
                                     local reconstructed = ReconstructMessage(segments, partialResult)
-                                    local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
-                                    local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                    local wtMsg = BuildWTMsg(reconstructed)
                                     frameTranslationTargets[capturedArg1] = nil
                                     capturedThis:AddMessage(wtMsg)
                                     return
@@ -1015,8 +1072,7 @@ local function HookChatFrames(force)
                                     translationErrWarnShown = false
                                     WoWTranslate_CacheSave(capturedArg1, translation)
                                     local reconstructed = ReconstructMessage(segments, translation)
-                                    local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
-                                    local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                    local wtMsg = BuildWTMsg(reconstructed)
                                     -- Post to every frame that displayed the original message.
                                     -- Only fall back to DEFAULT_CHAT_FRAME when target tracking
                                     -- was lost (targets nil) — never when it's just absent from
@@ -1636,6 +1692,10 @@ local function InitializeSettings()
     end
     if WoWTranslateDB.incomingChannels.ENGLISH == nil then
         WoWTranslateDB.incomingChannels.ENGLISH = false
+    end
+
+    if WoWTranslateDB.translationColorFollow == nil then
+        WoWTranslateDB.translationColorFollow = false
     end
 
     DEBUG_MODE = WoWTranslateDB.debugMode or false
