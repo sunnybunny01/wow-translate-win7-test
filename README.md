@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-1.12-blue" alt="WoW 1.12">
-  <img src="https://img.shields.io/badge/version-0.12-green" alt="Version 0.14">
+  <img src="https://img.shields.io/badge/version-0.14-green" alt="Version 0.14">
   <img src="https://img.shields.io/github/license/sanjaygbhat/wow-translate" alt="License">
 </p>
 
