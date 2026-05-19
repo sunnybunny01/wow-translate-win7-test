@@ -736,29 +736,101 @@ end
 
 -- Check glossary for partial matches and replace terms in text
 function WoWTranslate_CheckGlossaryPartial(text)
-    local translated = text
-    local hasMatch = false
-
-    -- Sort keys by length (longest first) to avoid partial replacements
     local sortedKeys = {}
-    for chinese, _ in pairs(WoWTranslateGlossary) do
-        table.insert(sortedKeys, chinese)
+    for k, _ in pairs(WoWTranslateGlossary) do
+        table.insert(sortedKeys, k)
     end
     table.sort(sortedKeys, function(a, b) return string.len(a) > string.len(b) end)
 
-    for _, chinese in ipairs(sortedKeys) do
-        local english = WoWTranslateGlossary[chinese]
-        if string.find(translated, chinese, 1, true) then
-            translated = string.gsub(translated, chinese, english)
-            hasMatch = true
+    local function isAlphanumeric(byte)
+        return byte and (
+            (byte >= 65 and byte <= 90) or
+            (byte >= 97 and byte <= 122) or
+            (byte >= 48 and byte <= 57)
+        )
+    end
+
+    -- Find all non-overlapping matches in the ORIGINAL text only.
+    -- Never scan the replacement values — that's what caused "wAlterac Valleye Goldoodbye".
+    local matches = {}
+    local textLen = string.len(text)
+
+    for _, key in ipairs(sortedKeys) do
+        local keyLen = string.len(key)
+
+        -- Short pure-ASCII keys (abbreviations like "av", "g", "sm") must sit at
+        -- a word boundary so they don't fire inside English words produced by
+        -- earlier replacements or typed by the player.
+        local requireBoundary = false
+        if keyLen <= 3 then
+            requireBoundary = true
+            for i = 1, keyLen do
+                if string.byte(key, i) > 127 then
+                    requireBoundary = false  -- has multibyte (Chinese) chars, no boundary needed
+                    break
+                end
+            end
+        end
+
+        local pos = 1
+        while pos <= textLen do
+            local startPos, endPos = string.find(text, key, pos, true)
+            if not startPos then break end
+
+            local ok = true
+
+            if requireBoundary then
+                local before = startPos > 1 and string.byte(text, startPos - 1) or nil
+                local after  = endPos < textLen and string.byte(text, endPos + 1) or nil
+                if isAlphanumeric(before) or isAlphanumeric(after) then
+                    ok = false
+                end
+            end
+
+            if ok then
+                -- Longer keys already sorted first, so first match at a position wins.
+                -- Just check for overlap with what's already claimed.
+                for _, m in ipairs(matches) do
+                    if startPos <= m.endPos and endPos >= m.startPos then
+                        ok = false
+                        break
+                    end
+                end
+            end
+
+            if ok then
+                table.insert(matches, {
+                    startPos    = startPos,
+                    endPos      = endPos,
+                    replacement = WoWTranslateGlossary[key]
+                })
+            end
+
+            pos = endPos + 1
         end
     end
 
-    if hasMatch then
-        return translated, "glossary_partial"
+    if table.getn(matches) == 0 then
+        return nil, nil
     end
 
-    return nil, nil
+    -- Reconstruct: paste untouched spans between replacements.
+    table.sort(matches, function(a, b) return a.startPos < b.startPos end)
+
+    local parts = {}
+    local lastEnd = 0
+    for _, m in ipairs(matches) do
+        if m.startPos > lastEnd + 1 then
+            table.insert(parts, string.sub(text, lastEnd + 1, m.startPos - 1))
+        end
+        table.insert(parts, m.replacement)
+        lastEnd = m.endPos
+    end
+    if lastEnd < textLen then
+        table.insert(parts, string.sub(text, lastEnd + 1))
+    end
+
+    return table.concat(parts, ""), "glossary_partial"
 end
 
 -- Main glossary check function - tries exact first, then partial

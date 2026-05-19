@@ -7,16 +7,19 @@ WoWTranslate_API = {}
 
 -- Internal state
 local pendingRequests = {}
+local pendingTexts = {}   -- text -> requestId; deduplicates identical in-flight requests
 local dllAvailable = false
 local requestCounter = 0
 local pollFrame = nil
 local activePendingCount = 0
 local healthCheckElapsed = 0
 local HEALTH_CHECK_INTERVAL = 60  -- Re-ping DLL every 60s; wakes HTTP client after alt-tab
+local lastCallbackError = nil     -- last error captured from a pcall'd callback
 
 -- Constants
-local POLL_INTERVAL = 0.1  -- Poll every 100ms
-local REQUEST_TIMEOUT = 30 -- Timeout requests after 30 seconds
+local POLL_INTERVAL = 0.1   -- Poll every 100ms
+local REQUEST_TIMEOUT = 30  -- Timeout requests after 30 seconds
+local MAX_PENDING = 4        -- Max concurrent DLL requests; prevents queue overflow
 
 -- ============================================================================
 -- LUA 5.0 COMPATIBILITY
@@ -111,6 +114,20 @@ function WoWTranslate_API.Translate(text, callback, fromLang)
         return false
     end
 
+    -- Silently skip when the DLL queue is already full.
+    -- Excess requests would be dropped by the DLL internally, leaving Lua-side
+    -- pendingRequests entries that only time out after 30s, degrading the DLL state.
+    if activePendingCount >= MAX_PENDING then
+        return false
+    end
+
+    -- Deduplicate: the same chat message fires in every chat frame at once, producing
+    -- 4-5 identical requests before any result is cached.  Only the first needs to go
+    -- to the DLL; the rest will get a cache hit when the first callback completes.
+    if pendingTexts[text] then
+        return false
+    end
+
     -- Generate unique request ID
     requestCounter = requestCounter + 1
     local requestId = tostring(requestCounter)
@@ -121,6 +138,7 @@ function WoWTranslate_API.Translate(text, callback, fromLang)
         text = text,
         timestamp = GetTime()
     }
+    pendingTexts[text] = requestId
 
     -- Send request to DLL with caller-detected source language
     fromLang = fromLang or "zh"
@@ -131,6 +149,7 @@ function WoWTranslate_API.Translate(text, callback, fromLang)
 
     if not success then
         pendingRequests[requestId] = nil
+		pendingTexts[text] = nil 
         if callback then
             callback(nil, "DLL call failed: " .. tostring(err))
         end
@@ -179,13 +198,20 @@ local function PollTranslations()
             if requestId and pendingRequests[requestId] then
                 local req = pendingRequests[requestId]
                 pendingRequests[requestId] = nil
+                pendingTexts[req.text] = nil
                 OnRequestCompleted()
 
                 if req.callback then
+                    -- pcall prevents a callback error from disabling the pollFrame OnUpdate.
+                    -- Capture errors so /wt status can surface them for diagnosis.
+                    local _cbOk, _cbErr
                     if err and err ~= "" then
-                        req.callback(nil, err)
+                        _cbOk, _cbErr = pcall(req.callback, nil, err)
                     else
-                        req.callback(translation, nil)
+                        _cbOk, _cbErr = pcall(req.callback, translation, nil)
+                    end
+                    if not _cbOk then
+                        lastCallbackError = tostring(_cbErr)
                     end
                 end
             end
@@ -197,9 +223,10 @@ local function PollTranslations()
     for id, req in pairs(pendingRequests) do
         if now - req.timestamp > REQUEST_TIMEOUT then
             pendingRequests[id] = nil
+            pendingTexts[req.text] = nil
             OnRequestCompleted()
             if req.callback then
-                pcall(req.callback, nil, "Request timed out")
+                pcall(req.callback, nil, "Request timed out")  -- pcall: don't break polling on error
             end
         end
     end
@@ -236,9 +263,7 @@ healthCheckFrame:SetScript("OnUpdate", function()
     healthCheckElapsed = healthCheckElapsed + arg1
     if healthCheckElapsed >= HEALTH_CHECK_INTERVAL then
         healthCheckElapsed = 0
-        if dllAvailable then
-            WoWTranslate_API.CheckDLL()
-        end
+        WoWTranslate_API.CheckDLL() -- always; restores dllAvailable if DLL recovers
     end
 end)
 
@@ -263,6 +288,11 @@ function WoWTranslate_API.TranslateOutgoing(text, callback)
         return false
     end
 
+    if activePendingCount >= MAX_PENDING then
+        if callback then callback(nil, "Queue full, try again shortly") end
+        return false
+    end
+
     -- Generate unique request ID with "out_" prefix to distinguish from incoming
     requestCounter = requestCounter + 1
     local requestId = "out_" .. tostring(requestCounter)
@@ -283,6 +313,7 @@ function WoWTranslate_API.TranslateOutgoing(text, callback)
 
     if not success then
         pendingRequests[requestId] = nil
+		pendingTexts[text] = nil 
         if callback then
             callback(nil, "DLL call failed: " .. tostring(err))
         end
@@ -306,6 +337,11 @@ function WoWTranslate_API.GetPendingCount()
     return count
 end
 
+-- Get last error thrown by a callback (nil if no error yet)
+function WoWTranslate_API.GetLastCallbackError()
+    return lastCallbackError
+end
+
 -- Clear all pending requests (used by /wt reset for recovery)
 function WoWTranslate_API.ClearPending()
     for id, req in pairs(pendingRequests) do
@@ -314,6 +350,7 @@ function WoWTranslate_API.ClearPending()
         end
         pendingRequests[id] = nil
     end
+    pendingTexts = {}
     activePendingCount = 0
     WoWTranslate_API.StopPolling()
 end

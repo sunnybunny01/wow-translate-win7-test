@@ -22,6 +22,13 @@ local hookCallCount = 0         -- incremented every time any hook body executes
 local pendingMessages = {}
 local messageCounter = 0
 
+-- Maps capturedArg1 (raw message text) -> {frame -> true}
+-- Collects every chat frame that showed the original Chinese message so the async
+-- translation callback can post to all of them.  Multiple frames fire the same
+-- OnEvent for one message; dedup lets only the first reach the DLL, but all frames
+-- that displayed the original must also show the translation.
+local frameTranslationTargets = {}
+
 -- Outgoing translation state
 local outgoingQueue = {}
 local outgoingCounter = 0
@@ -58,6 +65,7 @@ local EVENT_TO_CHANNEL = {
     CHAT_MSG_BATTLEGROUND = "BATTLEGROUND",
     CHAT_MSG_BATTLEGROUND_LEADER = "BATTLEGROUND",
     CHAT_MSG_CHANNEL = "CHANNEL",
+    CHAT_MSG_HARDCORE = "HARDCORE",
 }
 
 -- Events to skip translation for (system msgs, emotes, NPC speech, notifications)
@@ -95,6 +103,8 @@ local defaults = {
         YELL = true,
         BATTLEGROUND = true,
         CHANNEL = true,
+        HARDCORE = false,
+        ENGLISH = false,
     },
     incomingChannels = {
         SAY = true,
@@ -105,6 +115,8 @@ local defaults = {
         RAID = true,
         BATTLEGROUND = true,
         CHANNEL = true,
+        HARDCORE = false,
+        ENGLISH = false,
     },
     outgoingPrefix = "[Translated by WoWTranslate]",
     outgoingPrefixEnabled = true,
@@ -115,6 +127,7 @@ local defaults = {
     incomingToLang = "en",
     outgoingFromLang = "en",
     outgoingToLang = "zh",
+    translationColor = "",  -- Hex RRGGBB for translated text body; empty = default chat color
 }
 
 -- ============================================================================
@@ -471,6 +484,10 @@ local function LocalizeHyperlink(link)
                 end
                 DebugLog("  Rebuilt link with English name")
                 return result
+            else
+                -- Item not in client cache yet; trigger a server request so next
+                -- occurrence of this item link will resolve to the English name.
+                TriggerItemCache(itemId)
             end
         end
     elseif linkType == "quest" then
@@ -675,8 +692,11 @@ local function BuildTranslatableText(segments)
             table.insert(parts, StripColorCodes(seg.content))
         else
             linkIndex = linkIndex + 1
-            -- Use URL format - translation APIs preserve URLs
-            table.insert(parts, "http://ph.wt/" .. linkIndex)
+            -- Space-pad the placeholder so Google never merges it with adjacent CJK bytes.
+            -- Without spaces, "来人http://ph.wt/1" is treated as one URL and the Chinese
+            -- is left untranslated.  The spaces are benign — ReconstructMessage uses a
+            -- substring search so it finds "http://ph.wt/N" inside " http://ph.wt/N ".
+            table.insert(parts, " http://ph.wt/" .. linkIndex .. " ")
         end
     end
 
@@ -764,8 +784,44 @@ end
 -- CHAT FRAME HOOKING
 -- ============================================================================
 
-local function HookChatFrames()
-    -- Keep originalAddMessage for DebugLog display only
+-- Per-event display tags for the [WT-X] prefix shown with each translation.
+-- CHAT_MSG_CHANNEL is handled dynamically from arg4 (channel name string).
+local EVENT_CHANNEL_TAGS = {
+    CHAT_MSG_SAY                  = "WT-Say",
+    CHAT_MSG_YELL                 = "WT-Yell",
+    CHAT_MSG_WHISPER              = "WT-Whisper",
+    CHAT_MSG_WHISPER_INFORM       = "WT-Whisper",
+    CHAT_MSG_PARTY                = "WT-Party",
+    CHAT_MSG_GUILD                = "WT-Guild",
+    CHAT_MSG_OFFICER              = "WT-Officer",
+    CHAT_MSG_RAID                 = "WT-Raid",
+    CHAT_MSG_RAID_LEADER          = "WT-Raid",
+    CHAT_MSG_RAID_WARNING         = "WT-Raid",
+    CHAT_MSG_BATTLEGROUND         = "WT-BG",
+    CHAT_MSG_BATTLEGROUND_LEADER  = "WT-BG",
+    CHAT_MSG_HARDCORE             = "WT-Hardcore",
+}
+
+-- Returns the [WT-X] tag string for a given event.
+-- For CHAT_MSG_CHANNEL, channelStr is arg4 (e.g. "2. Trade" or "World").
+local function GetChannelTag(event, channelStr)
+    local tag = EVENT_CHANNEL_TAGS[event]
+    if tag then return tag end
+    if event == "CHAT_MSG_CHANNEL" then
+        if channelStr and channelStr ~= "" then
+            -- Strip leading "N. " number prefix that WoW prepends to channel names
+            local name = string.gsub(channelStr, "^%d+%.%s*", "")
+            if name and name ~= "" then return "WT-" .. name end
+        end
+        return "WT-Channel"
+    end
+    return "WT"
+end
+
+-- force=true clears WoWTranslateHooked so all frames are re-hooked (used by /wt reset).
+-- origScript is saved on the frame so re-hooking always wraps the real WoW handler,
+-- never a previously-installed WoWTranslate wrapper (no double-wrapping).
+local function HookChatFrames(force)
     if not originalAddMessage and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
     end
@@ -774,117 +830,221 @@ local function HookChatFrames()
         local frameName = "ChatFrame" .. i
         local frame = getglobal(frameName)
 
-        if frame and not frame.WoWTranslateHooked then
-            local origScript = frame:GetScript("OnEvent")
-            if not origScript then
-                DebugLog("No OnEvent script on", frameName)
-            else
-                frame.WoWTranslateHooked = true
+        if frame then
+            if force then frame.WoWTranslateHooked = false end
 
-                frame:SetScript("OnEvent", function()
-                    hookCallCount = hookCallCount + 1
+            if not frame.WoWTranslateHooked then
+                -- On re-hook use the saved original so we never wrap our own wrapper
+                local origScript = frame.WoWTranslate_OrigScript or frame:GetScript("OnEvent")
+                if not origScript then
+                    DebugLog("No OnEvent script on", frameName)
+                else
+                    frame.WoWTranslate_OrigScript = origScript  -- persist for safe re-hook
+                    frame.WoWTranslateHooked = true
 
-                    -- Capture event globals before origScript may clobber them
-                    local capturedEvent = event
-                    local capturedArg1  = arg1
-                    local capturedArg2  = arg2   -- sender name (may be nil for system events)
-                    local capturedThis  = this
+                    frame:SetScript("OnEvent", function()
+                        hookCallCount = hookCallCount + 1
 
-                    -- Let WoW's own filter decide: if origScript didn't add a message
-                    -- to this frame (filtered out), don't add a translation either.
-                    local msgsBefore = capturedThis:GetNumMessages()
-                    origScript()
-                    if capturedThis:GetNumMessages() <= msgsBefore then
-                        return
-                    end
+                        -- Capture event globals before origScript may clobber them
+                        local capturedEvent = event
+                        local capturedArg1  = arg1
+                        local capturedArg2  = arg2
+                        local capturedArg4  = arg4  -- channel name string for CHAT_MSG_CHANNEL
+                        local capturedThis  = this
 
-                    if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
-                    if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+                        -- Wrap in pcall: an unhandled Lua error in a SetScript handler
+                        -- silently disables it in WoW 1.12. Capture the error for debug.
+                        local _ok, _err = pcall(function()
+                            -- Let WoW's own filter decide: if origScript didn't add a message
+                            -- to this frame (filtered out), don't add a translation either.
+                            -- Primary: shadow AddMessage on the frame instance to detect the call
+                            -- directly — this works even when the ring-buffer is full (128 msgs),
+                            -- where GetNumMessages() alone cannot distinguish "shown" from "filtered".
+                            -- Fallback: if the shadow was never triggered (e.g. WoW build ignores
+                            -- instance-table shadows for built-in methods), use GetNumMessages with
+                            -- the pre-fix < 128 heuristic so we degrade gracefully.
+                            local msgsBefore = capturedThis:GetNumMessages()
+                            local messageShownInFrame = false
+                            local origFrameAddMsg = capturedThis.AddMessage
 
-                    local channel  = EVENT_TO_CHANNEL[capturedEvent]
-                    local isSystem = SYSTEM_EVENTS[capturedEvent]
-                    if not channel and not isSystem then return end
-                    if isSystem and not WoWTranslateDB.translateSystemMessages then return end
-
-                    if channel then
-                        local inChannels = WoWTranslateDB.incomingChannels
-                        if inChannels and not inChannels[channel] then return end
-                    end
-
-                    -- arg1 for CHAT_MSG_* events is the raw message body
-                    if not capturedArg1 or capturedArg1 == "" then return end
-
-                    -- Skip macro directives (#showtooltip, #show, etc.)
-                    if string.sub(capturedArg1, 1, 1) == "#" then return end
-
-                    local detectedLang = DetectSourceLanguage(capturedArg1)
-                    DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
-                    if not detectedLang then return end
-
-                    -- Sender prefix so translation line is self-contained
-                    local senderPrefix = ""
-                    if capturedArg2 and capturedArg2 ~= "" then
-                        senderPrefix = capturedArg2 .. ": "
-                    end
-
-                    -- Cache hit: show translation immediately
-                    local cached, found = WoWTranslate_CacheGet(capturedArg1)
-                    if found then
-                        DebugLog("Cache hit")
-                        capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. cached)
-                        return
-                    end
-
-                    -- Glossary exact match (whole message is a known term)
-                    local glossaryResult = WoWTranslate_CheckGlossaryExact(capturedArg1)
-                    if glossaryResult then
-                        DebugLog("Glossary exact:", glossaryResult)
-                        WoWTranslate_CacheSave(capturedArg1, glossaryResult)
-                        capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. glossaryResult)
-                        return
-                    end
-
-                    -- Glossary partial: substitute known terms before (or instead of) API
-                    local textToTranslate = capturedArg1
-                    local partialResult = WoWTranslate_CheckGlossaryPartial(capturedArg1)
-                    if partialResult then
-                        if not DetectSourceLanguage(partialResult) then
-                            -- All CJK resolved by glossary, no API needed
-                            DebugLog("Glossary full partial:", partialResult)
-                            WoWTranslate_CacheSave(capturedArg1, partialResult)
-                            capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. partialResult)
-                            return
-                        end
-                        -- Some CJK remains; send pre-processed text to API
-                        textToTranslate = partialResult
-                        DebugLog("Glossary pre-processed, sending to API")
-                    end
-
-                    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
-                        if not dllWarnShown then
-                            dllWarnShown = true
-                            capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] DLL not connected - run /wt status|r")
-                        end
-                        return
-                    end
-
-                    WoWTranslate_API.Translate(textToTranslate, function(translation, err)
-                        if translation and translation ~= "" then
-                            DebugLog("Translation:", string.sub(translation, 1, 50))
-                            translationErrWarnShown = false  -- reset on success
-                            WoWTranslate_CacheSave(capturedArg1, translation)
-                            capturedThis:AddMessage("|cFF00FFFF[WT]|r " .. senderPrefix .. translation)
-                        else
-                            DebugLog("Translation error:", tostring(err))
-                            if not translationErrWarnShown then
-                                translationErrWarnShown = true
-                                capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] Translation failing (" .. tostring(err) .. ") - try /wt reset|r")
+                            capturedThis.AddMessage = function(f, a, b, c, d, e, g)
+                                messageShownInFrame = true
+                                capturedThis.AddMessage = nil  -- restore metatable access
+                                origFrameAddMsg(f, a, b, c, d, e, g)
                             end
-                        end
-                    end, detectedLang)
-                end)
 
-                DebugLog("Hooked", frameName, "via SetScript")
+                            local origOk, origErr = pcall(origScript)
+
+                            -- Always clean up regardless of outcome
+                            capturedThis.AddMessage = nil
+
+                            if not origOk then
+                                DebugLog("origScript error:", tostring(origErr))
+                                return
+                            end
+
+                            if not messageShownInFrame then
+                                -- Shadow either worked (message filtered) or wasn't triggered.
+                                -- Use GetNumMessages as fallback — ambiguous only at 128.
+                                local msgsAfter = capturedThis:GetNumMessages()
+                                if msgsAfter < msgsBefore
+                                    or (msgsAfter == msgsBefore and msgsBefore < 128) then
+                                    return
+                                end
+                            end
+
+                            if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
+                            if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+
+                            local channel  = EVENT_TO_CHANNEL[capturedEvent]
+                            local isSystem = SYSTEM_EVENTS[capturedEvent]
+                            if not channel and not isSystem then return end
+                            if isSystem and not WoWTranslateDB.translateSystemMessages then return end
+
+                            if channel then
+                                local inChannels = WoWTranslateDB.incomingChannels
+                                local effectiveChannel = channel
+                                if channel == "CHANNEL" and capturedArg4 then
+                                    local chanName = string.gsub(capturedArg4, "^%d+%.%s*", "")
+                                    if string.lower(chanName) == "english" then
+                                        effectiveChannel = "ENGLISH"
+                                    end
+                                end
+                                if inChannels and not inChannels[effectiveChannel] then return end
+                            end
+
+                            if not capturedArg1 or capturedArg1 == "" then return end
+                            if string.sub(capturedArg1, 1, 1) == "#" then return end
+
+                            local detectedLang = DetectSourceLanguage(capturedArg1)
+                            DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
+                            if not detectedLang then return end
+
+                            local senderPrefix = ""
+                            if capturedArg2 and capturedArg2 ~= "" then
+                                if channel then
+                                    -- Real player chat: wrap name as clickable player link
+                                    senderPrefix = "|Hplayer:" .. capturedArg2 .. "|h[" .. capturedArg2 .. "]|h: "
+                                else
+                                    senderPrefix = capturedArg2 .. ": "
+                                end
+                            end
+
+                            local channelTag = GetChannelTag(capturedEvent, capturedArg4)
+                            local msgColor = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
+
+                            -- Split into text and hyperlink segments.
+                            -- Chinese bytes in link display names (e.g. [剑]) are NOT
+                            -- translatable plain text — HasTranslatableContent checks only
+                            -- text segments. Pure-link messages are skipped here, which
+                            -- also prevents the raw | pipe codes from breaking DLL parsing.
+                            local segments = SplitIntoSegments(capturedArg1)
+                            if not HasTranslatableContent(segments) then return end
+
+                            -- Build text with hyperlinks as URL placeholders so the DLL
+                            -- never sees WoW pipe-codes in the text it sends to Google.
+                            local plainText = BuildTranslatableText(segments)
+
+                            -- Register this frame as a recipient for the translation of
+                            -- this message.  WoW fires each chat frame's OnEvent in turn
+                            -- for the same message, so capturedThis differs per iteration.
+                            -- Dedup lets only the first frame reach the DLL; we collect all
+                            -- frames here so the async callback posts to every relevant tab.
+                            -- Only register when the AddMessage interception confirmed the
+                            -- original message actually appeared in this frame.  Frames that
+                            -- filtered the message (channel disabled, tab not showing it)
+                            -- must not receive the translation either.
+                            if not messageShownInFrame then return end
+                            if not frameTranslationTargets[capturedArg1] then
+                                frameTranslationTargets[capturedArg1] = {}
+                            end
+                            frameTranslationTargets[capturedArg1][capturedThis] = true
+
+                            local cached, found = WoWTranslate_CacheGet(capturedArg1)
+                            if found then
+                                DebugLog("Cache hit")
+                                local reconstructed = ReconstructMessage(segments, cached)
+                                local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
+                                local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                -- Sync path: each frame handles itself; clear shared table entry.
+                                frameTranslationTargets[capturedArg1] = nil
+                                capturedThis:AddMessage(wtMsg)
+                                return
+                            end
+
+                            local glossaryResult = WoWTranslate_CheckGlossaryExact(plainText)
+                            if glossaryResult then
+                                DebugLog("Glossary exact:", glossaryResult)
+                                WoWTranslate_CacheSave(capturedArg1, glossaryResult)
+                                local reconstructed = ReconstructMessage(segments, glossaryResult)
+                                local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
+                                local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                frameTranslationTargets[capturedArg1] = nil
+                                capturedThis:AddMessage(wtMsg)
+                                return
+                            end
+
+                            local textToTranslate = plainText
+                            local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
+                            if partialResult then
+                                if not DetectSourceLanguage(partialResult) then
+                                    DebugLog("Glossary full partial:", partialResult)
+                                    WoWTranslate_CacheSave(capturedArg1, partialResult)
+                                    local reconstructed = ReconstructMessage(segments, partialResult)
+                                    local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
+                                    local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                    frameTranslationTargets[capturedArg1] = nil
+                                    capturedThis:AddMessage(wtMsg)
+                                    return
+                                end
+                                textToTranslate = partialResult
+                                DebugLog("Glossary pre-processed, sending to API")
+                            end
+
+                            if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+                                if not dllWarnShown then
+                                    dllWarnShown = true
+                                    capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] DLL not connected - run /wt status|r")
+                                end
+                                return
+                            end
+
+                            WoWTranslate_API.Translate(textToTranslate, function(translation, err)
+                                if translation and translation ~= "" then
+                                    DebugLog("Translation:", string.sub(translation, 1, 50))
+                                    translationErrWarnShown = false
+                                    WoWTranslate_CacheSave(capturedArg1, translation)
+                                    local reconstructed = ReconstructMessage(segments, translation)
+                                    local displayBody = msgColor ~= "" and ("|cFF" .. msgColor .. reconstructed .. "|r") or reconstructed
+                                    local wtMsg = "|cFF00FFFF[" .. channelTag .. "]|r " .. senderPrefix .. displayBody
+                                    -- Post to every frame that displayed the original message.
+                                    -- Only fall back to DEFAULT_CHAT_FRAME when target tracking
+                                    -- was lost (targets nil) — never when it's just absent from
+                                    -- targets, which would add the message to a wrong tab.
+                                    local targets = frameTranslationTargets[capturedArg1]
+                                    frameTranslationTargets[capturedArg1] = nil
+                                    if targets then
+                                        for targetFrame in pairs(targets) do
+                                            targetFrame:AddMessage(wtMsg)
+                                        end
+                                    else
+                                        DEFAULT_CHAT_FRAME:AddMessage(wtMsg)
+                                    end
+                                else
+                                    DebugLog("Translation error:", tostring(err))
+                                    frameTranslationTargets[capturedArg1] = nil
+                                    if not translationErrWarnShown then
+                                        translationErrWarnShown = true
+                                        capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] Translation failing (" .. tostring(err) .. ") - try /wt reset|r")
+                                    end
+                                end
+                            end, detectedLang)
+                        end)  -- end pcall
+                        if not _ok then DebugLog("OnEvent hook error:", tostring(_err)) end
+                    end)
+
+                    DebugLog("Hooked", frameName, "via SetScript")
+                end
             end
         end
     end
@@ -939,8 +1099,19 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
     end
 
     -- Skip if channel not enabled
-    if not WoWTranslateDB.outgoingChannels or not WoWTranslateDB.outgoingChannels[chatType] then
+    if not WoWTranslateDB.outgoingChannels then
         DebugLog("Channel not enabled for outgoing:", chatType)
+        return originalSendChatMessage(msg, chatType, language, channel)
+    end
+    local effectiveOutChannel = chatType
+    if chatType == "CHANNEL" and channel then
+        local chanName = GetChannelName(channel) or ""
+        if string.lower(chanName) == "english" then
+            effectiveOutChannel = "ENGLISH"
+        end
+    end
+    if not WoWTranslateDB.outgoingChannels[effectiveOutChannel] then
+        DebugLog("Channel not enabled for outgoing:", effectiveOutChannel)
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
@@ -1170,6 +1341,10 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  Pending API requests: " .. pendingCount)
         DEFAULT_CHAT_FRAME:AddMessage("  Queued incoming: " .. queuedCount)
         DEFAULT_CHAT_FRAME:AddMessage("  Queued outgoing: " .. outgoingQueuedCount)
+        local cbErr = WoWTranslate_API.GetLastCallbackError and WoWTranslate_API.GetLastCallbackError()
+        if cbErr then
+            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444Last callback error:|r " .. cbErr)
+        end
 
     elseif cmd == "test" then
         local testText = arg or "\228\189\160\229\165\189"
@@ -1352,16 +1527,17 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
     -- CONFIGURATION UI COMMANDS
     -- =====================================================================
     elseif cmd == "reset" then
-        -- Recovery command for when translations stop after alt-tab or DLL stall
+        -- Full recovery: re-hook frames (fixes disabled handlers), clear stale API state
         local cleared = WoWTranslate_API.GetPendingCount()
         WoWTranslate_API.ClearPending()
         dllWarnShown = false
         translationErrWarnShown = false
+        HookChatFrames(true)  -- force re-install all chat frame hooks
         local ok = WoWTranslate_API.CheckDLL()
         if ok then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Reset OK — DLL responding, cleared " .. cleared .. " stale request(s)|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Reset OK — hooks reinstalled, DLL responding, cleared " .. cleared .. " stale request(s)|r")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Reset: DLL not responding — try /reload|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Reset: hooks reinstalled but DLL not responding — try /reload|r")
         end
 
     elseif cmd == "hooktest" then
@@ -1432,13 +1608,19 @@ local function InitializeSettings()
         WoWTranslateDB.outgoingPrefix = "[Translated by WoWTranslate]"
     end
 
-    -- Migration: add BATTLEGROUND/CHANNEL to existing outgoingChannels
+    -- Migration: add BATTLEGROUND/CHANNEL/HARDCORE to existing outgoingChannels
     if WoWTranslateDB.outgoingChannels then
         if WoWTranslateDB.outgoingChannels.BATTLEGROUND == nil then
             WoWTranslateDB.outgoingChannels.BATTLEGROUND = true
         end
         if WoWTranslateDB.outgoingChannels.CHANNEL == nil then
             WoWTranslateDB.outgoingChannels.CHANNEL = true
+        end
+        if WoWTranslateDB.outgoingChannels.HARDCORE == nil then
+            WoWTranslateDB.outgoingChannels.HARDCORE = false
+        end
+        if WoWTranslateDB.outgoingChannels.ENGLISH == nil then
+            WoWTranslateDB.outgoingChannels.ENGLISH = false
         end
     end
 
@@ -1448,6 +1630,12 @@ local function InitializeSettings()
         for k, v in pairs(defaults.incomingChannels) do
             WoWTranslateDB.incomingChannels[k] = v
         end
+    end
+    if WoWTranslateDB.incomingChannels.HARDCORE == nil then
+        WoWTranslateDB.incomingChannels.HARDCORE = false
+    end
+    if WoWTranslateDB.incomingChannels.ENGLISH == nil then
+        WoWTranslateDB.incomingChannels.ENGLISH = false
     end
 
     DEBUG_MODE = WoWTranslateDB.debugMode or false
@@ -1535,6 +1723,20 @@ cleanupFrame:SetScript("OnUpdate", function()
         cleanupElapsed = 0
         CleanupPendingMessages()
         CleanupOutgoingQueue()
+    end
+end)
+
+-- Watchdog: WoW 1.12 replaces SetScript("OnEvent") handlers on chat frames when
+-- certain events fire (channel join, zone change, UPDATE_CHAT_WINDOWS, etc.).
+-- Re-install our wrappers every 60s so hooks stay active after such events.
+-- pcall prevents a HookChatFrames error from silently killing this OnUpdate.
+local hookWatchdogElapsed = 0
+local hookWatchdogFrame = CreateFrame("Frame")
+hookWatchdogFrame:SetScript("OnUpdate", function()
+    hookWatchdogElapsed = hookWatchdogElapsed + arg1
+    if hookWatchdogElapsed >= 60 then
+        hookWatchdogElapsed = 0
+        pcall(HookChatFrames, true)
     end
 end)
 
