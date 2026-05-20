@@ -1,5 +1,9 @@
 # WoWTranslate / 魔兽翻译
 
+### 1. Download / 下载
+
+**[⬇️ Download Latest Release](../../releases/latest)**
+
 <p align="center">
   <strong>Real-time chat translation for World of Warcraft 1.12</strong><br>
   Break the language barrier on multilingual WoW 1.12 servers
