@@ -59,7 +59,7 @@ YourWoWFolder/
 
 > You have to run via `VanillaFixes.exe` or any other WoW dll launcher.
 
->There is a possibility that your AV flags the dll, you have to exclude it to work. 
+>There is a possibility that your AV flags the dll, if this happens you have to add the dll to exclusions. 
 
 **Done!** A minimap button (scroll icon) appears — click it to open settings. Chat messages will now appear translated.
 
