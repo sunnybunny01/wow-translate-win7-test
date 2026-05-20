@@ -1,4 +1,4 @@
-# WoWTranslate
+# WoWTranslate / 魔兽翻译
 
 <p align="center">
   <strong>Real-time chat translation for World of Warcraft 1.12</strong><br>
@@ -7,7 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-1.12-blue" alt="WoW 1.12">
-  <img src="https://img.shields.io/badge/version-1.0-green" alt="Version 1.0">
+  <img src="https://img.shields.io/badge/version-1.1-green" alt="Version 1.1">
   <img src="https://img.shields.io/github/license/sanjaygbhat/wow-translate" alt="License">
 </p>
 
@@ -18,7 +18,7 @@
 | Feature | Description |
 |---------|-------------|
 | 🌍 **Multi-Language** | Chinese, Japanese, Korean, Russian → English (and vice-versa) |
-| 📚 **WoW Glossary** | 550+ gaming terms translated correctly ("老克" → "Kel'Thuzad", not "Old gram") |
+| 📚 **WoW Glossary** | 850+ gaming terms translated correctly ("老克" → "Kel'Thuzad", not "Old gram") |
 | ⚡ **Instant Cache** | Previously seen translations are instant |
 | 💬 **Outgoing Translation** | Type in English, send in Chinese (or other languages) |
 | 🔗 **Hyperlink Safe** | Player names, items, and quests stay clickable and are translated|
@@ -91,7 +91,7 @@ YourWoWFolder/
 
 Open settings with `/wt show`:
 
-- **Incoming**: What language to translate FROM (Chinese, Japanese, Korean, Russian)
+- **Incoming**: What language to translate FROM (Chinese, Japanese, Korean, Russian, English)
 - **Outgoing**: Enable translation for Say, Party, Guild, Whisper, etc.
 - **Channel Filtering**: Toggle individual channels (Say, Yell, Whisper, Party, Guild, Raid, Battleground, World/Local, Hardcore) for both incoming and outgoing
 - **AFK Pause**: Translation pauses while AFK (off by default, configurable)
