@@ -77,7 +77,7 @@ end
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
 configFrame:SetWidth(480)
-configFrame:SetHeight(780)
+configFrame:SetHeight(820)
 configFrame:SetPoint("CENTER", 0, 0)
 configFrame:SetMovable(true)
 configFrame:EnableMouse(true)
@@ -447,6 +447,16 @@ configFrame.elements.colorSwatch = colorSwatch
 local Y_COLOR_FOLLOW = -698
 configFrame.elements.colorFollow = CreateCheckbox("Follow channel color", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
 
+-- Experimental Section
+local Y_EXP_HEADER = -725
+local expHeader = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+expHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_EXP_HEADER)
+expHeader:SetText("Experimental:")
+expHeader:SetTextColor(1, 0.5, 0)
+
+local Y_EXP_ROW = -748
+configFrame.elements.replaceMode = CreateCheckbox("Replace original with translation (may delay/lose messages)", 25, Y_EXP_ROW, "replaceMode", nil)
+
 -- Bottom Buttons
 local clearBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 clearBtn:SetPoint("BOTTOMLEFT", configFrame, "BOTTOMLEFT", 25, 20)
@@ -490,6 +500,7 @@ local function RefreshUI()
         end
     end
     if e.colorFollow then e.colorFollow:SetChecked(cfg.translationColorFollow) end
+    if e.replaceMode then e.replaceMode:SetChecked(cfg.replaceMode) end
     if e.inEnabled then e.inEnabled:SetChecked(cfg.enabled) end
     if e.afkDisable then e.afkDisable:SetChecked(cfg.disableWhileAfk) end
     if e.translateSystem then e.translateSystem:SetChecked(cfg.translateSystemMessages) end

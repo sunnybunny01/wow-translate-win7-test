@@ -860,6 +860,35 @@ WoWTranslateGlossary["银币"] = "silver"
 WoWTranslateGlossary["铜币"] = "copper"
 
 -- ============================================================================
+-- MANA SLANG (蓝 = blue = mana bar color)
+-- ============================================================================
+-- Compound forms are longer and match before bare 蓝 (蓝量/蓝装/蓝龙 already in glossary)
+WoWTranslateGlossary["没蓝了"] = "out of mana"
+WoWTranslateGlossary["没蓝"] = "out of mana"
+WoWTranslateGlossary["蓝"] = "mana"
+
+-- ============================================================================
+-- PULL / AGGRO / WIPE / RES
+-- ============================================================================
+WoWTranslateGlossary["拉住了"] = "got aggro"
+WoWTranslateGlossary["拉住"] = "holding aggro"
+WoWTranslateGlossary["引怪了"] = "accidental pull"
+WoWTranslateGlossary["引怪"] = "accidental pull"
+-- 灭了/灭团/团灭 already in glossary; bare 灭 as safety net
+WoWTranslateGlossary["灭"] = "wipe"
+-- Resurrection / get up (999 → res me handled by PreprocessIncoming)
+WoWTranslateGlossary["起来了"] = "get up"
+WoWTranslateGlossary["起来"] = "get up"
+
+-- ============================================================================
+-- NINJA LOOTING (毛 = greedy/sketchy, slang for ninja)
+-- ============================================================================
+WoWTranslateGlossary["曝光毛人"] = "expose the ninja looter"
+WoWTranslateGlossary["毛团"] = "ninja raid"
+WoWTranslateGlossary["毛人"] = "ninja looter"
+WoWTranslateGlossary["毛"] = "ninja"
+
+-- ============================================================================
 -- GLOSSARY LOOKUP FUNCTIONS
 -- ============================================================================
 

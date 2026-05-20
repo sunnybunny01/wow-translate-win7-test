@@ -265,6 +265,30 @@ WoWTranslateOutGlossary["Heals"] = "奶"
 WoWTranslateOutGlossary["heal"] = "奶"
 WoWTranslateOutGlossary["Heal"] = "奶"
 
+-- Mana slang (蓝 = blue mana bar; OOM = out of mana)
+WoWTranslateOutGlossary["out of mana"] = "没蓝"
+WoWTranslateOutGlossary["Out of mana"] = "没蓝"
+WoWTranslateOutGlossary["OOM"] = "没蓝"
+WoWTranslateOutGlossary["oom"] = "没蓝"
+WoWTranslateOutGlossary["mana"] = "蓝"
+WoWTranslateOutGlossary["Mana"] = "蓝"
+
+-- Aggro / pull extras (Pull/pull → 拉怪 already in glossary)
+WoWTranslateOutGlossary["accidental pull"] = "引怪"
+WoWTranslateOutGlossary["ADD"] = "引怪"
+
+-- Resurrection
+WoWTranslateOutGlossary["Res me"] = "救我"
+WoWTranslateOutGlossary["res me"] = "救我"
+WoWTranslateOutGlossary["get up"] = "起来"
+WoWTranslateOutGlossary["Get up"] = "起来"
+
+-- Ninja looting (毛 = ninja/greedy)
+WoWTranslateOutGlossary["ninja looter"] = "毛人"
+WoWTranslateOutGlossary["Ninja looter"] = "毛人"
+WoWTranslateOutGlossary["ninja"] = "毛"
+WoWTranslateOutGlossary["Ninja"] = "毛"
+
 -- ============================================================================
 -- OUTGOING GLOSSARY LOOKUP FUNCTIONS
 -- ============================================================================

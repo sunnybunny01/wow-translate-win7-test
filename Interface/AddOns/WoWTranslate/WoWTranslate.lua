@@ -129,6 +129,7 @@ local defaults = {
     outgoingToLang = "zh",
     translationColor = "",       -- Hex RRGGBB for translated text body; empty = default chat color
     translationColorFollow = false,  -- If true, body color follows the source channel color
+    replaceMode = false,         -- [EXPERIMENTAL] Replace original message with translation instead of appending
 }
 
 -- ============================================================================
@@ -293,6 +294,17 @@ local function PreprocessIncoming(text)
     text = string.gsub(text, "([^%w])88$",        "%1bye")
     text = string.gsub(text, "^88([^%w])",         "bye%1")
     text = string.gsub(text, "^88$",               "bye")
+    -- 999 = res me (jiǔ = save/rescue, sounds like 9). Isolated only.
+    text = string.gsub(text, "([^%w])999([^%w])", "%1res me%2")
+    text = string.gsub(text, "([^%w])999$",        "%1res me")
+    text = string.gsub(text, "^999([^%w])",         "res me%1")
+    text = string.gsub(text, "^999$",               "res me")
+    -- 11 = yāo yāo = affirmative / "yes yes". [^%w] boundary; note: may fire on
+    -- "我要11个" (I want 11 of them) since CJK chars are not %w in Lua 5.0.
+    text = string.gsub(text, "([^%w])11([^%w])", "%1yes%2")
+    text = string.gsub(text, "([^%w])11$",        "%1yes")
+    text = string.gsub(text, "^11([^%w])",         "yes%1")
+    text = string.gsub(text, "^11$",               "yes")
     return text
 end
 
@@ -976,6 +988,8 @@ local function HookChatFrames(force)
                             local msgsBefore = capturedThis:GetNumMessages()
                             local messageShownInFrame = false
                             local origFrameAddMsg = capturedThis.AddMessage
+                            -- replaceMode: args from the intercepted AddMessage call; nil = not captured.
+                            local pendingArgs = nil
 
                             capturedThis.AddMessage = function(f, a, b, c, d, e, g)
                                 messageShownInFrame = true
@@ -983,8 +997,25 @@ local function HookChatFrames(force)
                                 -- Setting nil would expose the raw WoW metatable method, silently
                                 -- breaking any AddMessage chains installed by other addons.
                                 capturedThis.AddMessage = origFrameAddMsg
-                                origFrameAddMsg(f, a, b, c, d, e, g)
-                           end
+                                if WoWTranslateDB and WoWTranslateDB.replaceMode then
+                                    -- Suppress the original; hold args so we can show the original
+                                    -- on early-exit paths or show the translation on success.
+                                    pendingArgs = {f=f, a=a, b=b, c=c, d=d, e=e, g=g}
+                                else
+                                    origFrameAddMsg(f, a, b, c, d, e, g)
+                                end
+                            end
+
+                            -- Shows the original message if it was suppressed and translation
+                            -- was not produced (early exit, DLL error, etc.).
+                            local function FlushOriginal()
+                                if pendingArgs then
+                                    origFrameAddMsg(pendingArgs.f, pendingArgs.a, pendingArgs.b,
+                                                    pendingArgs.c, pendingArgs.d, pendingArgs.e,
+                                                    pendingArgs.g)
+                                    pendingArgs = nil
+                                end
+                            end
 
                             local origOk, origErr = pcall(origScript)
 							
@@ -993,7 +1024,7 @@ local function HookChatFrames(force)
 
                             if not origOk then
                                 DebugLog("origScript error:", tostring(origErr))
-                                return
+                                FlushOriginal(); return
                             end
 
                             if not messageShownInFrame then
@@ -1002,17 +1033,17 @@ local function HookChatFrames(force)
                                 local msgsAfter = capturedThis:GetNumMessages()
                                 if msgsAfter < msgsBefore
                                     or (msgsAfter == msgsBefore and msgsBefore < 128)then
-                                    return
+                                    FlushOriginal(); return
                                 end
                             end
 
-                            if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
-                            if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+                            if not WoWTranslateDB or not WoWTranslateDB.enabled then FlushOriginal(); return end
+                            if WoWTranslateDB.disableWhileAfk and playerIsAFK then FlushOriginal(); return end
 
                             local channel  = EVENT_TO_CHANNEL[capturedEvent]
                             local isSystem = SYSTEM_EVENTS[capturedEvent]
-                            if not channel and not isSystem then return end
-                            if isSystem and not WoWTranslateDB.translateSystemMessages then return end
+                            if not channel and not isSystem then FlushOriginal(); return end
+                            if isSystem and not WoWTranslateDB.translateSystemMessages then FlushOriginal(); return end
 
                             if channel then
                                 local inChannels = WoWTranslateDB.incomingChannels
@@ -1023,11 +1054,11 @@ local function HookChatFrames(force)
                                         effectiveChannel = "ENGLISH"
                                     end
                                 end
-                                if inChannels and not inChannels[effectiveChannel] then return end
+                                if inChannels and not inChannels[effectiveChannel] then FlushOriginal(); return end
                             end
 
-                            if not capturedArg1 or capturedArg1 == "" then return end
-                            if string.sub(capturedArg1, 1, 1) == "#" then return end
+                            if not capturedArg1 or capturedArg1 == "" then FlushOriginal(); return end
+                            if string.sub(capturedArg1, 1, 1) == "#" then FlushOriginal(); return end
                             -- Strip any WoWTranslate prefix that another addon user prepended.
                             -- All prefix variants are [... WoWTranslate ...] — strip up to the
                             -- closing ] so the body is still translated normally.
@@ -1044,12 +1075,12 @@ local function HookChatFrames(force)
 
                             local detectedLang = DetectSourceLanguage(capturedArg1)
                             DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
-                            if not detectedLang then return end
+                            if not detectedLang then FlushOriginal(); return end
                             -- Skip no-op translations (e.g. zh→zh when Chinese player sets target=zh).
                             -- Without this, the ZH→EN glossary fires on Chinese text, inserts English,
                             -- and the result is shown in English or sent to the DLL as zh→zh garbage.
                             local incomingTargetLang = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
-                            if detectedLang == incomingTargetLang then return end
+                            if detectedLang == incomingTargetLang then FlushOriginal(); return end
 
                             local senderPrefix = ""
                             if capturedArg2 and capturedArg2 ~= "" then
@@ -1104,7 +1135,7 @@ local function HookChatFrames(force)
                             -- text segments. Pure-link messages are skipped here, which
                             -- also prevents the raw | pipe codes from breaking DLL parsing.
                             local segments = SplitIntoSegments(capturedArg1)
-                            if not HasTranslatableContent(segments) then return end
+                            if not HasTranslatableContent(segments) then FlushOriginal(); return end
 
                             -- Build text with hyperlinks as URL placeholders so the DLL
                             -- never sees WoW pipe-codes in the text it sends to Google.
@@ -1130,7 +1161,7 @@ local function HookChatFrames(force)
                                    capturedArg2 and capturedArg2 ~= "" then
                                     wimWhisperUser = capturedArg2
                                 else
-                                    return
+                                    FlushOriginal(); return
                                 end
                             end
                             if not wimWhisperUser then
@@ -1207,7 +1238,23 @@ local function HookChatFrames(force)
                                     dllWarnShown = true
                                     capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] DLL not connected - run /wt status|r")
                                 end
-                                return
+                                FlushOriginal(); return
+                            end
+
+                            -- replaceMode: transfer captured args to pendingMessages so the
+                            -- 30s safety net can restore the original if the DLL never responds.
+                            local replacePendingKey = nil
+                            if pendingArgs then
+                                replacePendingKey = "r|" .. tostring(capturedThis) .. "|" .. capturedArg1
+                                pendingMessages[replacePendingKey] = {
+                                    originalAddMessage = origFrameAddMsg,
+                                    frame              = pendingArgs.f,
+                                    originalText       = pendingArgs.a,
+                                    r = pendingArgs.b, g = pendingArgs.c, b = pendingArgs.d,
+                                    id = pendingArgs.e, holdTime = pendingArgs.g,
+                                    timestamp = GetTime()
+                                }
+                                pendingArgs = nil
                             end
 
                             WoWTranslate_API.Translate(textToTranslate, function(translation, err)
@@ -1217,6 +1264,10 @@ local function HookChatFrames(force)
                                     WoWTranslate_CacheSave(capturedArg1, translation)
                                     local reconstructed = ReconstructMessage(segments, translation)
                                     local wtMsg = BuildWTMsg(reconstructed)
+                                    -- replaceMode: original was suppressed; clear safety net entry.
+                                    if replacePendingKey then
+                                        pendingMessages[replacePendingKey] = nil
+                                    end
                                     -- Post to every frame that displayed the original message.
                                     -- Only fall back to DEFAULT_CHAT_FRAME when target tracking
                                     -- was lost (targets nil) — never when it's just absent from
@@ -1235,6 +1286,15 @@ local function HookChatFrames(force)
                                 else
                                     DebugLog("Translation error:", tostring(err))
                                     frameTranslationTargets[capturedArg1] = nil
+                                    -- replaceMode: translation failed — show original immediately.
+                                    if replacePendingKey then
+                                        local rp = pendingMessages[replacePendingKey]
+                                        if rp then
+                                            pendingMessages[replacePendingKey] = nil
+                                            rp.originalAddMessage(rp.frame, rp.originalText,
+                                                rp.r, rp.g, rp.b, rp.id, rp.holdTime)
+                                        end
+                                    end
                                     if not translationErrWarnShown then
                                         translationErrWarnShown = true
                                         capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] Translation failing (" .. tostring(err) .. ") - try /wt reset|r")
@@ -1923,7 +1983,7 @@ local function OnAddonLoaded()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.1 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v0.17 - " .. dllStatus .. " | /wt show")
 end
 
 local function OnPlayerLogin()
