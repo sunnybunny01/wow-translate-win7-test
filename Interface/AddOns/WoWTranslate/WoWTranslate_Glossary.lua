@@ -95,11 +95,13 @@ WoWTranslateGlossary["死亡骑士"] = "Stratholme UD"
 WoWTranslateGlossary["活面"] = "Stratholme Live"
 WoWTranslateGlossary["死面"] = "Stratholme Undead"
 
--- Scholomance
+-- Scholomance (TL = Pinyin abbreviation used on CN servers)
 WoWTranslateGlossary["通灵学院"] = "Scholomance"
 WoWTranslateGlossary["SCHOLO"] = "Scholomance"
 WoWTranslateGlossary["scholo"] = "Scholomance"
 WoWTranslateGlossary["通灵"] = "Scholomance"
+WoWTranslateGlossary["TL"] = "Scholomance"
+WoWTranslateGlossary["tl"] = "Scholomance"
 
 -- Blackrock Depths
 WoWTranslateGlossary["黑石深渊"] = "Blackrock Depths"
@@ -126,6 +128,8 @@ WoWTranslateGlossary["死亡矿井"] = "Deadmines"
 WoWTranslateGlossary["死亡矿坑"] = "Deadmines"
 WoWTranslateGlossary["VC"] = "Deadmines"
 WoWTranslateGlossary["vc"] = "Deadmines"
+WoWTranslateGlossary["SK"] = "Deadmines"
+WoWTranslateGlossary["sk"] = "Deadmines"
 WoWTranslateGlossary["死矿"] = "Deadmines"
 
 -- Wailing Caverns
@@ -138,6 +142,8 @@ WoWTranslateGlossary["哀嚎"] = "Wailing Caverns"
 WoWTranslateGlossary["影牙城堡"] = "Shadowfang Keep"
 WoWTranslateGlossary["SFK"] = "Shadowfang Keep"
 WoWTranslateGlossary["sfk"] = "Shadowfang Keep"
+WoWTranslateGlossary["YY"] = "Shadowfang Keep"
+WoWTranslateGlossary["yy"] = "Shadowfang Keep"
 WoWTranslateGlossary["影牙"] = "Shadowfang Keep"
 
 -- Gnomeregan
@@ -177,8 +183,6 @@ WoWTranslateGlossary["沉没的神庙"] = "Sunken Temple"
 WoWTranslateGlossary["塔哈克神庙"] = "Sunken Temple"
 WoWTranslateGlossary["ST"] = "Sunken Temple"
 WoWTranslateGlossary["st"] = "Sunken Temple"
-WoWTranslateGlossary["SK"] = "Sunken Temple"
-WoWTranslateGlossary["sk"] = "Sunken Temple"
 WoWTranslateGlossary["神庙"] = "Sunken Temple"
 
 -- Ragefire Chasm
@@ -721,6 +725,139 @@ WoWTranslateGlossary["附魔"] = "Enchanting"
 WoWTranslateGlossary["龟龟"] = "turtle server"
 WoWTranslateGlossary["乌龟服"] = "turtle server"
 WoWTranslateGlossary["龟服"] = "turtle server"
+
+-- ============================================================================
+-- COMBAT CALLOUTS & RAID TACTICS
+-- ============================================================================
+WoWTranslateGlossary["停手"] = "Stop DPS"
+WoWTranslateGlossary["停输出"] = "Stop DPS"
+WoWTranslateGlossary["全力输出"] = "Full DPS"
+WoWTranslateGlossary["全力输出打爆发"] = "Burn Phase"
+WoWTranslateGlossary["控制输出"] = "Slow DPS"
+WoWTranslateGlossary["注意仇恨"] = "Watch your aggro"
+WoWTranslateGlossary["我OT了"] = "I have aggro"
+WoWTranslateGlossary["仇恨丢了"] = "Lost aggro"
+WoWTranslateGlossary["倒T了"] = "Tank is down"
+WoWTranslateGlossary["求奶"] = "Need heals"
+WoWTranslateGlossary["求buff"] = "Need buffs"
+WoWTranslateGlossary["别踩火"] = "Out of the fire"
+WoWTranslateGlossary["躲开AOE"] = "Avoid AOE"
+WoWTranslateGlossary["别动"] = "Don't move"
+WoWTranslateGlossary["快动"] = "Move!"
+WoWTranslateGlossary["分散站位"] = "Spread out"
+WoWTranslateGlossary["集合重合"] = "Stack up"
+WoWTranslateGlossary["打断"] = "Interrupt"
+WoWTranslateGlossary["打断施法"] = "Interrupt the cast"
+WoWTranslateGlossary["嘲讽"] = "Taunt"
+WoWTranslateGlossary["变羊"] = "Sheep (polymorph)"
+WoWTranslateGlossary["休眠"] = "Hibernate"
+WoWTranslateGlossary["吹风"] = "Cyclone"
+WoWTranslateGlossary["魅惑"] = "Seduce"
+WoWTranslateGlossary["放逐"] = "Banish"
+WoWTranslateGlossary["闷棍"] = "Sap"
+WoWTranslateGlossary["束缚亡灵"] = "Shackle Undead"
+WoWTranslateGlossary["解诅咒"] = "Remove Curse"
+WoWTranslateGlossary["驱散"] = "Dispel"
+WoWTranslateGlossary["假死"] = "Feign Death"
+WoWTranslateGlossary["消失"] = "Vanish"
+WoWTranslateGlossary["心灵控制"] = "Mind Control"
+WoWTranslateGlossary["拉怪"] = "Pull (aggro)"
+WoWTranslateGlossary["嗜血"] = "Bloodlust"
+WoWTranslateGlossary["战斗复活"] = "Battle Rez"
+WoWTranslateGlossary["灵魂石"] = "Soulstone"
+WoWTranslateGlossary["治疗石"] = "Healthstone"
+
+-- ============================================================================
+-- COMBAT STATES & EFFECTS
+-- ============================================================================
+WoWTranslateGlossary["被晕"] = "Stunned"
+WoWTranslateGlossary["被冰冻"] = "Frozen"
+WoWTranslateGlossary["被缠绕"] = "Rooted"
+WoWTranslateGlossary["被嘲讽"] = "Taunted"
+WoWTranslateGlossary["被诅咒"] = "Cursed"
+WoWTranslateGlossary["被束缚"] = "Shackled"
+WoWTranslateGlossary["抵抗"] = "Resisted"
+WoWTranslateGlossary["免疫"] = "Immune"
+WoWTranslateGlossary["中毒"] = "Poisoned"
+WoWTranslateGlossary["掉线"] = "DC (disconnected)"
+WoWTranslateGlossary["我卡了"] = "I have lag"
+
+-- ============================================================================
+-- RAID MARKERS
+-- ============================================================================
+WoWTranslateGlossary["骷髅标"] = "Skull marker"
+WoWTranslateGlossary["大饼"] = "Circle marker"
+WoWTranslateGlossary["大叉"] = "Cross marker"
+
+-- ============================================================================
+-- LOOT & ECONOMY (WoW-specific)
+-- ============================================================================
+WoWTranslateGlossary["装绑"] = "BOE (Bind on Equip)"
+WoWTranslateGlossary["拾绑"] = "BOP (Bind on Pickup)"
+WoWTranslateGlossary["装备后绑定"] = "Bind on Equip (BOE)"
+WoWTranslateGlossary["拾取后绑定"] = "Bind on Pickup (BOP)"
+WoWTranslateGlossary["软保留"] = "Soft Reserve (SR)"
+WoWTranslateGlossary["硬保留"] = "Hard Reserve"
+WoWTranslateGlossary["主天赋"] = "Main Spec"
+WoWTranslateGlossary["副天赋"] = "Off Spec"
+WoWTranslateGlossary["主副天赋"] = "MS/OS"
+WoWTranslateGlossary["一口价"] = "Buyout"
+WoWTranslateGlossary["起拍价"] = "Opening Bid"
+WoWTranslateGlossary["成交"] = "Sold"
+WoWTranslateGlossary["出售"] = "WTS (Selling)"
+WoWTranslateGlossary["求购"] = "WTB (Buying)"
+WoWTranslateGlossary["分解"] = "Disenchant"
+WoWTranslateGlossary["队长分配"] = "Master Looter"
+WoWTranslateGlossary["自由拾取"] = "Free for All (loot)"
+WoWTranslateGlossary["副本"] = "Dungeon/Instance"
+
+-- ============================================================================
+-- CHAT SLANG (additional entries)
+-- ============================================================================
+WoWTranslateGlossary["私聊"] = "PST"
+WoWTranslateGlossary["求邀请"] = "Inv me"
+WoWTranslateGlossary["我回来了"] = "I'm back"
+WoWTranslateGlossary["得走了"] = "GTG (gotta go)"
+WoWTranslateGlossary["晚安"] = "GN (good night)"
+WoWTranslateGlossary["别担心"] = "Don't worry"
+WoWTranslateGlossary["我的错"] = "My bad"
+WoWTranslateGlossary["算了"] = "Nevermind"
+WoWTranslateGlossary["收到"] = "Roger"
+WoWTranslateGlossary["你在哪"] = "Where are you?"
+WoWTranslateGlossary["过来"] = "Come here"
+WoWTranslateGlossary["走吧"] = "Let's go"
+WoWTranslateGlossary["非常感谢"] = "Thanks a lot"
+WoWTranslateGlossary["万分感谢"] = "Many thanks"
+WoWTranslateGlossary["我累了"] = "I'm tired"
+WoWTranslateGlossary["合作愉快"] = "Nice playing with you"
+WoWTranslateGlossary["祝你好运"] = "Good luck"
+
+-- ============================================================================
+-- HEALER SLANG (奶 system — 奶 = milk, used for healing/healers)
+-- ============================================================================
+-- Class-specific healer specs
+WoWTranslateGlossary["奶妈"] = "Healer"            -- literal: "milk mommy"
+WoWTranslateGlossary["奶德"] = "Resto Druid"       -- milk druid
+WoWTranslateGlossary["奶骑"] = "Holy Paladin"      -- milk paladin
+WoWTranslateGlossary["奶萨"] = "Resto Shaman"      -- milk shaman
+WoWTranslateGlossary["奶牧"] = "Holy Priest"       -- milk priest
+WoWTranslateGlossary["奶龙"] = "Aug Evoker"        -- milk aug (Augmentation Evoker)
+WoWTranslateGlossary["奶我"] = "Heal me"           -- literal: "milk me"
+-- 奶 as a standalone verb/noun (heal/heals). Compound terms above are longer and
+-- sorted first in partial matching, so 奶妈/奶骑/etc. are never affected by this.
+WoWTranslateGlossary["奶"] = "heals"
+WoWTranslateGlossary["奶一奶"] = "Heal up"
+WoWTranslateGlossary["奶一下"] = "Give me a heal"
+-- Jinx slang (奶 also means to jinx in CN esports)
+WoWTranslateGlossary["毒奶"] = "reverse-jinxed"   -- "poison milk" = said someone would win, they lost
+
+-- ============================================================================
+-- CURRENCY SLANG
+-- ============================================================================
+-- Static entries; dynamic number+G/Y patterns are handled by PreprocessIncoming
+WoWTranslateGlossary["金币"] = "gold"
+WoWTranslateGlossary["银币"] = "silver"
+WoWTranslateGlossary["铜币"] = "copper"
 
 -- ============================================================================
 -- GLOSSARY LOOKUP FUNCTIONS

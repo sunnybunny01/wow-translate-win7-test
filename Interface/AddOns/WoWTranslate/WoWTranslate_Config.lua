@@ -77,7 +77,7 @@ end
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
 configFrame:SetWidth(480)
-configFrame:SetHeight(750)
+configFrame:SetHeight(780)
 configFrame:SetPoint("CENTER", 0, 0)
 configFrame:SetMovable(true)
 configFrame:EnableMouse(true)
@@ -277,19 +277,21 @@ local Y_IN_LANG    = -145
 local Y_SRC_LABEL  = -205
 local Y_SRC_ROW    = -230
 
-local Y_IN_CH_LABEL = -270
-local Y_IN_CH_ROW1 = -295
-local Y_IN_CH_ROW2 = -325
-local Y_IN_CH_ROW3 = -355
+local Y_SRC_ROW2 = -260
 
-local Y_OUT_HEADER = -390
-local Y_OUT_ENABLE = -420
-local Y_OUT_LANG   = -455
+local Y_IN_CH_LABEL = -300
+local Y_IN_CH_ROW1 = -325
+local Y_IN_CH_ROW2 = -355
+local Y_IN_CH_ROW3 = -385
 
-local Y_CH_LABEL   = -525
-local Y_CH_ROW1    = -550
-local Y_CH_ROW2    = -580
-local Y_CH_ROW3    = -610
+local Y_OUT_HEADER = -420
+local Y_OUT_ENABLE = -450
+local Y_OUT_LANG   = -485
+
+local Y_CH_LABEL   = -555
+local Y_CH_ROW1    = -580
+local Y_CH_ROW2    = -610
+local Y_CH_ROW3    = -640
 
 -- Incoming Translation Section
 CreateHeader("Incoming Translation (Chat -> You)", Y_IN_HEADER)
@@ -307,6 +309,7 @@ configFrame.elements.srcZH = CreateCheckbox("Chinese",  25,  Y_SRC_ROW, "enabled
 configFrame.elements.srcJA = CreateCheckbox("Japanese", 135, Y_SRC_ROW, "enabledSourceLangs", "ja")
 configFrame.elements.srcKO = CreateCheckbox("Korean",   245, Y_SRC_ROW, "enabledSourceLangs", "ko")
 configFrame.elements.srcRU = CreateCheckbox("Russian",  340, Y_SRC_ROW, "enabledSourceLangs", "ru")
+configFrame.elements.srcEN = CreateCheckbox("English",  25,  Y_SRC_ROW2, "enabledSourceLangs", "en")
 
 -- Incoming Channels Section
 local inChLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -360,7 +363,7 @@ configFrame.elements.chHC = CreateCheckbox("Hardcore", 310, Y_CH_ROW3, "outgoing
 -- Translation Color Section — all controls on one line.
 -- Frames MUST anchor to configFrame (not to FontStrings) in WoW 1.12;
 -- FontStrings may anchor to Frames freely.
-local Y_COLOR = -643
+local Y_COLOR = -673
 
 local colorSectionLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 colorSectionLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_COLOR)
@@ -441,7 +444,7 @@ configFrame.elements.colorSwatch = colorSwatch
 
 -- Second color row: opt in to using the source channel's native color for the body.
 -- When checked, the custom swatch color is ignored.
-local Y_COLOR_FOLLOW = -668
+local Y_COLOR_FOLLOW = -698
 configFrame.elements.colorFollow = CreateCheckbox("Follow channel color", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
 
 -- Bottom Buttons
@@ -499,6 +502,7 @@ local function RefreshUI()
     if e.srcJA then e.srcJA:SetChecked(srcLangs.ja) end
     if e.srcKO then e.srcKO:SetChecked(srcLangs.ko) end
     if e.srcRU then e.srcRU:SetChecked(srcLangs.ru) end
+    if e.srcEN then e.srcEN:SetChecked(srcLangs.en) end
 
     if e.inTo and e.inTo.display then
         e.inTo.display:SetText(GetLanguageName(cfg.incomingToLang or "en"))

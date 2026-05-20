@@ -123,7 +123,7 @@ local defaults = {
     disableWhileAfk = false,
     translateSystemMessages = false,  -- Don't translate system msgs, emotes, NPC speech
     -- Language settings (any-to-any translation)
-    enabledSourceLangs = { zh = true, ja = true, ko = true, ru = true },
+    enabledSourceLangs = { zh = true, ja = true, ko = true, ru = true, en = false },
     incomingToLang = "en",
     outgoingFromLang = "en",
     outgoingToLang = "zh",
@@ -194,6 +194,24 @@ end
 local function ContainsLanguageChars(text, lang)
     if not text then return false end
 
+    -- English: pure ASCII text with >= 4 alpha characters.
+    -- Any non-ASCII byte (>= 128) means the text contains CJK/Russian/etc., so it is
+    -- NOT purely English. Without this guard, Chinese messages that mix in WoW
+    -- abbreviations like "MC DPS LFG" (4+ Latin chars) would falsely be detected
+    -- as "already English" and skip outgoing translation.
+    if lang == "en" then
+        local count = 0
+        for i = 1, string.len(text) do
+            local b = string.byte(text, i)
+            if b >= 128 then
+                return false  -- non-ASCII character: not a pure English message
+            elseif (b >= 65 and b <= 90) or (b >= 97 and b <= 122) then
+                count = count + 1
+            end
+        end
+        return count >= 4
+    end
+
     for i = 1, string.len(text) do
         local byte = string.byte(text, i)
 
@@ -254,6 +272,46 @@ local function ContainsChinese(text)
     return ContainsLanguageChars(text, "zh")
 end
 
+-- Pattern-based preprocessing for incoming CJK messages.
+-- Converts WoW-CN specific shorthands that the static glossary cannot handle.
+local function PreprocessIncoming(text)
+    if not text then return text end
+    -- Currency: XG = X gold, XY = X silver. Only when not followed by a letter
+    -- so "YY" (Shadowfang Keep), "GM" etc. are not touched.
+    -- Run BEFORE 88 handling so "88Y" → "88s" (silver), not "bye Y".
+    text = string.gsub(text, "(%d+)G([^%a])", "%1g%2")
+    text = string.gsub(text, "(%d+)G$", "%1g")
+    text = string.gsub(text, "(%d+)Y([^%a])", "%1s%2")
+    text = string.gsub(text, "(%d+)Y$", "%1s")
+    -- 110 = patrol mob (China police emergency number used as WoW slang)
+    text = string.gsub(text, "([^%w])110([^%w])", "%1patrol%2")
+    text = string.gsub(text, "([^%w])110$",        "%1patrol")
+    text = string.gsub(text, "^110([^%w])",         "patrol%1")
+    text = string.gsub(text, "^110$",               "patrol")
+    -- 88 = bye bye (CN internet send-off). Only when isolated (not part of e.g. "880").
+    text = string.gsub(text, "([^%w])88([^%w])", "%1bye%2")
+    text = string.gsub(text, "([^%w])88$",        "%1bye")
+    text = string.gsub(text, "^88([^%w])",         "bye%1")
+    text = string.gsub(text, "^88$",               "bye")
+    return text
+end
+
+-- Pattern-based preprocessing for outgoing English messages.
+-- Converts standard WoW EN currency notation to CN server notation before API.
+local function PreprocessOutgoing(text)
+    if not text then return text end
+    -- Gold: Xg → XG
+    text = string.gsub(text, "(%d+)g([^%a])", "%1G%2")
+    text = string.gsub(text, "(%d+)g$",        "%1G")
+    -- Silver: Xs → XY only when the message also contains a gold amount.
+    -- Without this guard "3s CD" or "8s cast time" would wrongly become "3Y CD".
+    if string.find(text, "%d+[gG]") then
+        text = string.gsub(text, "(%d+)s([^%a])", "%1Y%2")
+        text = string.gsub(text, "(%d+)s$",        "%1Y")
+    end
+    return text
+end
+
 -- Auto-detect which source language a message is in.
 -- Returns "zh", "ja", "ko", "ru", or nil if no supported language found.
 local function DetectSourceLanguage(text)
@@ -269,6 +327,7 @@ local function DetectSourceLanguage(text)
     local hasHiragana = false
     local hasCJK      = false
     local hasRussian  = false
+    local asciiAlpha  = 0
 
     for i = 1, string.len(text) do
         local b = string.byte(text, i)
@@ -276,13 +335,24 @@ local function DetectSourceLanguage(text)
         elseif b == 227            then hasHiragana = true
         elseif b >= 228 and b <= 233 then hasCJK = true
         elseif b == 208 or b == 209  then hasRussian = true
+        elseif (b >= 65 and b <= 90) or (b >= 97 and b <= 122) then
+            asciiAlpha = asciiAlpha + 1
         end
     end
 
     if enabled.ko and hasKorean   then return "ko" end
+    -- Check zh BEFORE ja: Chinese punctuation (。、「」 etc.) uses UTF-8 byte 0xE3 (227),
+    -- the same first byte as Japanese hiragana/katakana. Chinese messages containing
+    -- both punctuation (byte 227 → hasHiragana) and characters (bytes 228-233 → hasCJK)
+    -- must be treated as Chinese, not Japanese.
+    if enabled.zh and hasCJK      then return "zh" end
     if enabled.ja and hasHiragana then return "ja" end
     if enabled.ru and hasRussian  then return "ru" end
-    if enabled.zh and hasCJK      then return "zh" end
+    -- English: >= 4 ASCII alpha chars, no CJK/Korean/Japanese/Russian.
+    -- Detection is unconditional (same-language skip prevents en→en no-ops).
+    if asciiAlpha >= 4 and not (hasCJK or hasKorean or hasHiragana or hasRussian) then
+        return "en"
+    end
     return nil
 end
 
@@ -897,26 +967,29 @@ local function HookChatFrames(force)
                         local _ok, _err = pcall(function()
                             -- Let WoW's own filter decide: if origScript didn't add a message
                             -- to this frame (filtered out), don't add a translation either.
-                            -- Primary: shadow AddMessage on the frame instance to detect the call
-                            -- directly — this works even when the ring-buffer is full (128 msgs),
-                            -- where GetNumMessages() alone cannot distinguish "shown" from "filtered".
-                            -- Fallback: if the shadow was never triggered (e.g. WoW build ignores
-                            -- instance-table shadows for built-in methods), use GetNumMessages with
-                            -- the pre-fix < 128 heuristic so we degrade gracefully.
+							-- Primary: shadow AddMessage on the frame instance to detect the call
+							-- directly — this works even when the ring-buffer is full (128 msgs),
+							-- where GetNumMessages() alone cannot distinguish "shown" from "filtered".
+							-- Fallback: if the shadow was never triggered (e.g. WoW build ignores
+ 							-- instance-table shadows for built-in methods), use GetNumMessages with
+							-- the pre-fix < 128 heuristic so we degrade gracefully.
                             local msgsBefore = capturedThis:GetNumMessages()
                             local messageShownInFrame = false
                             local origFrameAddMsg = capturedThis.AddMessage
 
                             capturedThis.AddMessage = function(f, a, b, c, d, e, g)
                                 messageShownInFrame = true
-                                capturedThis.AddMessage = nil  -- restore metatable access
+                                -- Restore to the previous hook (ShaguTweaks etc.) rather than nil.
+                                -- Setting nil would expose the raw WoW metatable method, silently
+                                -- breaking any AddMessage chains installed by other addons.
+                                capturedThis.AddMessage = origFrameAddMsg
                                 origFrameAddMsg(f, a, b, c, d, e, g)
-                            end
+                           end
 
                             local origOk, origErr = pcall(origScript)
-
-                            -- Always clean up regardless of outcome
-                            capturedThis.AddMessage = nil
+							
+                            -- Always restore; never leave our wrapper or a nil in place.
+                            capturedThis.AddMessage = origFrameAddMsg
 
                             if not origOk then
                                 DebugLog("origScript error:", tostring(origErr))
@@ -928,7 +1001,7 @@ local function HookChatFrames(force)
                                 -- Use GetNumMessages as fallback — ambiguous only at 128.
                                 local msgsAfter = capturedThis:GetNumMessages()
                                 if msgsAfter < msgsBefore
-                                    or (msgsAfter == msgsBefore and msgsBefore < 128) then
+                                    or (msgsAfter == msgsBefore and msgsBefore < 128)then
                                     return
                                 end
                             end
@@ -946,7 +1019,7 @@ local function HookChatFrames(force)
                                 local effectiveChannel = channel
                                 if channel == "CHANNEL" and capturedArg4 then
                                     local chanName = string.gsub(capturedArg4, "^%d+%.%s*", "")
-                                    if string.lower(chanName) == "english" then
+                                    if string.find(string.lower(chanName), "^english") then
                                         effectiveChannel = "ENGLISH"
                                     end
                                 end
@@ -955,16 +1028,36 @@ local function HookChatFrames(force)
 
                             if not capturedArg1 or capturedArg1 == "" then return end
                             if string.sub(capturedArg1, 1, 1) == "#" then return end
+                            -- Strip any WoWTranslate prefix that another addon user prepended.
+                            -- All prefix variants are [... WoWTranslate ...] — strip up to the
+                            -- closing ] so the body is still translated normally.
+                            do
+                                local p = string.find(capturedArg1, "WoWTranslate", 1, true)
+                                if p and p <= 50 then
+                                    local closeBracket = string.find(capturedArg1, "]", p, true)
+                                    if closeBracket then
+                                        local stripped = string.gsub(string.sub(capturedArg1, closeBracket + 1), "^%s+", "")
+                                        if stripped ~= "" then capturedArg1 = stripped end
+                                    end
+                                end
+                            end
 
                             local detectedLang = DetectSourceLanguage(capturedArg1)
                             DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
                             if not detectedLang then return end
+                            -- Skip no-op translations (e.g. zh→zh when Chinese player sets target=zh).
+                            -- Without this, the ZH→EN glossary fires on Chinese text, inserts English,
+                            -- and the result is shown in English or sent to the DLL as zh→zh garbage.
+                            local incomingTargetLang = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
+                            if detectedLang == incomingTargetLang then return end
 
                             local senderPrefix = ""
                             if capturedArg2 and capturedArg2 ~= "" then
                                 if channel then
-                                    -- Real player chat: wrap name as clickable player link
-                                    senderPrefix = "|Hplayer:" .. capturedArg2 .. "|h[" .. capturedArg2 .. "]|h: "
+                                    -- Real player chat: wrap name as a clickable player link.
+                                    -- |r after ]|h matches WoW's native chat format, which lets
+                                    -- ShaguTweaks chat-levels match its pattern and annotate levels.
+                                    senderPrefix = "|Hplayer:" .. capturedArg2 .. "|h[" .. capturedArg2 .. "]|h|r: "
                                 else
                                     senderPrefix = capturedArg2 .. ": "
                                 end
@@ -975,6 +1068,10 @@ local function HookChatFrames(force)
                             local chanColorHex = GetChatTypeColorHex(capturedEvent, capturedArg4)
                             -- Channel name part of the tag (everything after "WT-"), or nil for bare "WT".
                             local chanNamePart = string.sub(channelTag, 1, 3) == "WT-" and string.sub(channelTag, 4) or nil
+
+                            -- WIM: when WIM suppresses a whisper from chat frames, we post
+                            -- the translation directly to the WIM window instead.
+                            local wimWhisperUser = nil
 
                             local function BuildWTMsg(body)
                                 -- Prefix: [WT- in cyan, channel name in the native channel color.
@@ -991,6 +1088,14 @@ local function HookChatFrames(force)
                                 end
                                 local displayBody = bodyHex ~= "" and ("|cFF" .. bodyHex .. body .. "|r") or body
                                 return prefix .. " " .. senderPrefix .. displayBody
+                            end
+
+                            local function PostWTMsg(wtMsg)
+                                if wimWhisperUser and type(WIM_PostMessage) == "function" then
+                                    WIM_PostMessage(wimWhisperUser, wtMsg, 3)
+                                else
+                                    capturedThis:AddMessage(wtMsg)
+                                end
                             end
 
                             -- Split into text and hyperlink segments.
@@ -1014,11 +1119,26 @@ local function HookChatFrames(force)
                             -- original message actually appeared in this frame.  Frames that
                             -- filtered the message (channel disabled, tab not showing it)
                             -- must not receive the translation either.
-                            if not messageShownInFrame then return end
-                            if not frameTranslationTargets[capturedArg1] then
-                                frameTranslationTargets[capturedArg1] = {}
+                            if not messageShownInFrame then
+                                -- WIM compatibility: WIM suppresses whispers from standard chat frames
+                                -- (supressWisps=true is WIM's default). Detect this and route the
+                                -- translation to the WIM window instead of a chat frame AddMessage.
+                                if (capturedEvent == "CHAT_MSG_WHISPER" or capturedEvent == "CHAT_MSG_WHISPER_INFORM") and
+                                   type(WIM_Data) == "table" and WIM_Data.enableWIM and
+                                   WIM_Data.supressWisps ~= false and
+                                   type(WIM_PostMessage) == "function" and
+                                   capturedArg2 and capturedArg2 ~= "" then
+                                    wimWhisperUser = capturedArg2
+                                else
+                                    return
+                                end
                             end
-                            frameTranslationTargets[capturedArg1][capturedThis] = true
+                            if not wimWhisperUser then
+                                if not frameTranslationTargets[capturedArg1] then
+                                    frameTranslationTargets[capturedArg1] = {}
+                                end
+                                frameTranslationTargets[capturedArg1][capturedThis] = true
+                            end
 
                             local cached, found = WoWTranslate_CacheGet(capturedArg1)
                             if found then
@@ -1027,35 +1147,59 @@ local function HookChatFrames(force)
                                 local wtMsg = BuildWTMsg(reconstructed)
                                 -- Sync path: each frame handles itself; clear shared table entry.
                                 frameTranslationTargets[capturedArg1] = nil
-                                capturedThis:AddMessage(wtMsg)
-                                return
-                            end
-
-                            local glossaryResult = WoWTranslate_CheckGlossaryExact(plainText)
-                            if glossaryResult then
-                                DebugLog("Glossary exact:", glossaryResult)
-                                WoWTranslate_CacheSave(capturedArg1, glossaryResult)
-                                local reconstructed = ReconstructMessage(segments, glossaryResult)
-                                local wtMsg = BuildWTMsg(reconstructed)
-                                frameTranslationTargets[capturedArg1] = nil
-                                capturedThis:AddMessage(wtMsg)
+                                PostWTMsg(wtMsg)
                                 return
                             end
 
                             local textToTranslate = plainText
-                            local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
-                            if partialResult then
-                                if not DetectSourceLanguage(partialResult) then
-                                    DebugLog("Glossary full partial:", partialResult)
-                                    WoWTranslate_CacheSave(capturedArg1, partialResult)
-                                    local reconstructed = ReconstructMessage(segments, partialResult)
+                            if detectedLang == "en" then
+                                -- English source: apply EN→ZH outgoing glossary
+                                if WoWTranslate_CheckOutGlossaryExact then
+                                    local r = WoWTranslate_CheckOutGlossaryExact(plainText)
+                                    if r then
+                                        DebugLog("Outgoing glossary exact (incoming EN):", r)
+                                        WoWTranslate_CacheSave(capturedArg1, r)
+                                        frameTranslationTargets[capturedArg1] = nil
+                                        PostWTMsg(BuildWTMsg(ReconstructMessage(segments, r)))
+                                        return
+                                    end
+                                end
+                                if WoWTranslate_CheckOutGlossaryPartial then
+                                    local r = WoWTranslate_CheckOutGlossaryPartial(plainText)
+                                    if r then
+                                        DebugLog("Outgoing glossary partial (incoming EN):", r)
+                                        textToTranslate = r
+                                    end
+                                end
+                            else
+                                -- Preprocess: currency (XG = gold, XY = silver), 88 = bye, 110 = patrol
+                                plainText = PreprocessIncoming(plainText)
+                                textToTranslate = plainText
+                                -- CJK/Russian source: apply ZH→EN incoming glossary
+                                local glossaryResult = WoWTranslate_CheckGlossaryExact(plainText)
+                                if glossaryResult then
+                                    DebugLog("Glossary exact:", glossaryResult)
+                                    WoWTranslate_CacheSave(capturedArg1, glossaryResult)
+                                    local reconstructed = ReconstructMessage(segments, glossaryResult)
                                     local wtMsg = BuildWTMsg(reconstructed)
                                     frameTranslationTargets[capturedArg1] = nil
-                                    capturedThis:AddMessage(wtMsg)
+                                    PostWTMsg(wtMsg)
                                     return
                                 end
-                                textToTranslate = partialResult
-                                DebugLog("Glossary pre-processed, sending to API")
+                                local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
+                                if partialResult then
+                                    if not DetectSourceLanguage(partialResult) then
+                                        DebugLog("Glossary full partial:", partialResult)
+                                        WoWTranslate_CacheSave(capturedArg1, partialResult)
+                                        local reconstructed = ReconstructMessage(segments, partialResult)
+                                        local wtMsg = BuildWTMsg(reconstructed)
+                                        frameTranslationTargets[capturedArg1] = nil
+                                        PostWTMsg(wtMsg)
+                                        return
+                                    end
+                                    textToTranslate = partialResult
+                                    DebugLog("Glossary pre-processed, sending to API")
+                                end
                             end
 
                             if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
@@ -1079,7 +1223,9 @@ local function HookChatFrames(force)
                                     -- targets, which would add the message to a wrong tab.
                                     local targets = frameTranslationTargets[capturedArg1]
                                     frameTranslationTargets[capturedArg1] = nil
-                                    if targets then
+                                    if wimWhisperUser and type(WIM_PostMessage) == "function" then
+                                        WIM_PostMessage(wimWhisperUser, wtMsg, 3)
+                                    elseif targets then
                                         for targetFrame in pairs(targets) do
                                             targetFrame:AddMessage(wtMsg)
                                         end
@@ -1161,9 +1307,16 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
     end
     local effectiveOutChannel = chatType
     if chatType == "CHANNEL" and channel then
-        local chanName = GetChannelName(channel) or ""
-        if string.lower(chanName) == "english" then
-            effectiveOutChannel = "ENGLISH"
+        -- GetChannelName(number) does not reliably return the name in WoW 1.12;
+        -- iterate GetChannelList() instead (returns id, name, id, name, ...).
+        local list = {GetChannelList()}
+        for i = 1, table.getn(list), 2 do
+            if list[i] == channel then
+                if string.find(string.lower(list[i+1] or ""), "^english") then
+                    effectiveOutChannel = "ENGLISH"
+                end
+                break
+            end
         end
     end
     if not WoWTranslateDB.outgoingChannels[effectiveOutChannel] then
@@ -1178,6 +1331,17 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
 
     -- Skip macro directives (#showtooltip, #show, etc.)
     if string.sub(msg, 1, 1) == "#" then
+        return originalSendChatMessage(msg, chatType, language, channel)
+    end
+
+    -- Skip dot-commands sent by addons (e.g. .server info from PizzaWorldBuffs)
+    if string.sub(msg, 1, 1) == "." then
+        return originalSendChatMessage(msg, chatType, language, channel)
+    end
+
+    -- Skip addon inter-communication messages (PizzaWorldBuffs, Atlas-CFM, etc.)
+    -- These follow the format: ADDONNAME:VERSION:DATA
+    if string.find(msg, "^[A-Za-z][A-Za-z0-9_]*:%d+:") then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
@@ -1200,6 +1364,36 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
     -- Build text to translate (hyperlinks replaced with URL placeholders)
     local textToTranslate = BuildTranslatableText(segments)
     DebugLog("Outgoing to translate:", textToTranslate)
+
+    -- Apply the glossary that matches the outgoing source language direction.
+    local outFromLang = WoWTranslateDB.outgoingFromLang or "en"
+    if outFromLang == "en" then
+        -- Convert EN currency notation to CN before glossary/API (Xg→XG, Xs→XY)
+        textToTranslate = PreprocessOutgoing(textToTranslate)
+        -- EN→ZH: apply EN→ZH outgoing glossary
+        if WoWTranslate_CheckOutGlossaryExact then
+            local glossaryResult = WoWTranslate_CheckOutGlossaryExact(textToTranslate)
+            if not glossaryResult and WoWTranslate_CheckOutGlossaryPartial then
+                glossaryResult = WoWTranslate_CheckOutGlossaryPartial(textToTranslate)
+            end
+            if glossaryResult then
+                DebugLog("Outgoing glossary (EN→ZH) applied:", glossaryResult)
+                textToTranslate = glossaryResult
+            end
+        end
+    else
+        -- ZH→EN (or other non-English source): apply ZH→EN incoming glossary
+        if WoWTranslate_CheckGlossaryExact then
+            local glossaryResult = WoWTranslate_CheckGlossaryExact(textToTranslate)
+            if not glossaryResult and WoWTranslate_CheckGlossaryPartial then
+                glossaryResult = WoWTranslate_CheckGlossaryPartial(textToTranslate)
+            end
+            if glossaryResult then
+                DebugLog("Outgoing glossary (ZH→EN) applied:", glossaryResult)
+                textToTranslate = glossaryResult
+            end
+        end
+    end
 
     -- Queue for translation
     outgoingCounter = outgoingCounter + 1
@@ -1708,6 +1902,9 @@ local function InitializeSettings()
     if WoWTranslateDB.enabledSourceLangs == nil then
         WoWTranslateDB.enabledSourceLangs = { zh=true, ja=true, ko=true, ru=true }
     end
+    if WoWTranslateDB.enabledSourceLangs.en == nil then
+        WoWTranslateDB.enabledSourceLangs.en = false
+    end
 end
 
 local function OnAddonLoaded()
@@ -1726,7 +1923,7 @@ local function OnAddonLoaded()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v0.14 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.1 - " .. dllStatus .. " | /wt show")
 end
 
 local function OnPlayerLogin()
