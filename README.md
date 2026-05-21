@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-1.12-blue" alt="WoW 1.12">
-  <img src="https://img.shields.io/badge/version-1.1-green" alt="Version 1.1">
+  <img src="https://img.shields.io/badge/version-1.2-green" alt="Version 1.2">
   <img src="https://img.shields.io/github/license/sanjaygbhat/wow-translate" alt="License">
 </p>
 
