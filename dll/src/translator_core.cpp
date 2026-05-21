@@ -303,6 +303,23 @@ string TranslationClient::HttpsGet(const string& path) {
 
     string response;
     if (result && WinHttpReceiveResponse(hRequest, nullptr)) {
+        // Read HTTP status code before consuming the body.
+        // A 429 response has an unparseable body; surface it explicitly
+        // so the Lua side can trigger immediate backoff rather than treating
+        // it as a generic API parse failure.
+        DWORD statusCode = 0;
+        DWORD statusLen  = sizeof(DWORD);
+        WinHttpQueryHeaders(hRequest,
+            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX,
+            &statusCode, &statusLen,
+            WINHTTP_NO_HEADER_INDEX);
+        if (statusCode == 429) {
+            LOG_WARNING("Rate limited by Google (HTTP 429)");
+            WinHttpCloseHandle(hRequest);
+            return "HTTP_429";
+        }
+
         DWORD bytesAvailable = 0;
         char buffer[8192];
         while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable)
@@ -408,6 +425,10 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
 
     string response = HttpsGet(path);
 
+    if (response == "HTTP_429") {
+        return TranslationResult::RATE_LIMITED;
+    }
+
     if (response.empty()) {
         LOG_ERROR("Empty response from Google Free");
         return TranslationResult::NETWORK_ERROR;
@@ -497,6 +518,7 @@ void TranslationClient::WorkerThreadFunc() {
                     case TranslationResult::API_ERROR:      error = "API error";     break;
                     case TranslationResult::ENCODING_ERROR: error = "encoding error"; break;
                     case TranslationResult::TIMEOUT_ERROR:  error = "timeout";       break;
+                    case TranslationResult::RATE_LIMITED:   error = "rate limited";  break;
                     default:                                error = "unknown error";  break;
                 }
                 translation = "";

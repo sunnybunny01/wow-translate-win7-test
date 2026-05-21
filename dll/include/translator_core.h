@@ -17,7 +17,8 @@ enum class TranslationResult {
     ENCODING_ERROR = 3,
     TIMEOUT_ERROR = 4,
     INVALID_PARAMS = 5,
-    PENDING = 6
+    PENDING = 6,
+    RATE_LIMITED = 7
 };
 
 struct AsyncRequest {
