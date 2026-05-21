@@ -4,6 +4,8 @@
 
 **[⬇️ Download Latest Release](../../releases/latest)**
 
+**[▶️Installation Instructions VIDEO](https://www.youtube.com/watch?v=tcxiaU0CSfA)**
+
 <p align="center">
   <strong>Real-time chat translation for World of Warcraft 1.12</strong><br>
   Break the language barrier on multilingual WoW 1.12 servers
@@ -75,6 +77,12 @@ YourWoWFolder/
 | `/wt test` | Test translation |
 | `/wt outgoing on` | Enable outgoing translation |
 | `/wt clearcache` | Clear translation cache |
+
+
+You can use the following Macro in-game to create an Outgoing Translation toggle:
+
+`/run if not WT_Toggle then WT_Toggle = true ChatFrameEditBox:SetText("/wt outgoing on") else WT_Toggle = nil ChatFrameEditBox:SetText("/wt outgoing off") end ChatEdit_SendText(ChatFrameEditBox)
+`
 
 ---
 
