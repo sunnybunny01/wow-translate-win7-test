@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: WoWTranslate
-## Notes: Real-time chat translation for WoW 1.12 (free, no API key needed)
-## Version: 1.1
+## Notes: Real-time chat translation for WoW 1.12
+## Version: 1.2
 ## Author: belthazor, WoWTranslateTeam
 ## SavedVariables: WoWTranslateDB WoWTranslateCache WoWTranslateDebugLog
 

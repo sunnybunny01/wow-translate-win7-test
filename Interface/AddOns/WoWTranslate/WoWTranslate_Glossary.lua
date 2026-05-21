@@ -78,8 +78,8 @@ WoWTranslateGlossary["血色"] = "Scarlet Monastery"
 
 -- Dire Maul
 WoWTranslateGlossary["厄运之槌"] = "Dire Maul"
-WoWTranslateGlossary["DM"] = "Dire Maul"
-WoWTranslateGlossary["dm"] = "Dire Maul"
+WoWTranslateGlossary["DM"] = "Deadmines"   -- CN servers: DM = 死矿 (Deadmines); Dire Maul = 厄运北/西/东
+WoWTranslateGlossary["dm"] = "Deadmines"
 WoWTranslateGlossary["厄运"] = "Dire Maul"
 WoWTranslateGlossary["DME"] = "Dire Maul East"
 WoWTranslateGlossary["DMW"] = "Dire Maul West"
@@ -213,6 +213,90 @@ WoWTranslateGlossary["KLZ墓穴"] = "Karazhan Crypts"
 WoWTranslateGlossary["卡拉赞"] = "Karazhan"
 WoWTranslateGlossary["暴风城地下室"] = "Stormwind Vault"
 WoWTranslateGlossary["大监狱地下"] = "Stormwind Vault"
+
+-- ============================================================================
+-- CN PINYIN ABBREVIATIONS FOR DUNGEONS
+-- ============================================================================
+-- Ragefire Chasm (NY = 怒焰 NùYàn)
+WoWTranslateGlossary["NY"] = "Ragefire Chasm"
+WoWTranslateGlossary["ny"] = "Ragefire Chasm"
+-- Stockades (JY = 监狱 JiānYù)
+WoWTranslateGlossary["JY"] = "Stockades"
+WoWTranslateGlossary["jy"] = "Stockades"
+-- Scarlet Monastery wings (XS = 血色 XuèSè)
+WoWTranslateGlossary["XS墓地"] = "Scarlet Monastery Graveyard"
+WoWTranslateGlossary["XS图书馆"] = "Scarlet Monastery Library"
+WoWTranslateGlossary["XS武器库"] = "Scarlet Monastery Armory"
+WoWTranslateGlossary["XS教堂"] = "Scarlet Monastery Cathedral"
+WoWTranslateGlossary["XS"] = "Scarlet Monastery"
+WoWTranslateGlossary["xs"] = "Scarlet Monastery"
+-- Gnomeregan (FB = 副本 = instance)
+WoWTranslateGlossary["侏儒FB"] = "Gnomeregan"
+WoWTranslateGlossary["矮子FB"] = "Gnomeregan"
+-- Razorfen Kraul (TD = 剃刀 TìDāo, ZZ = 沼泽)
+WoWTranslateGlossary["TD沼泽"] = "Razorfen Kraul"
+WoWTranslateGlossary["TDZZ"] = "Razorfen Kraul"
+-- Razorfen Downs (TD = 剃刀 TìDāo, GD = 高地)
+WoWTranslateGlossary["TD高地"] = "Razorfen Downs"
+WoWTranslateGlossary["TDGD"] = "Razorfen Downs"
+-- Uldaman (ADM = 奥达曼 AòDáMàn)
+WoWTranslateGlossary["ADM"] = "Uldaman"
+WoWTranslateGlossary["adm"] = "Uldaman"
+-- Zul'Farrak (ZR = 祖尔)
+WoWTranslateGlossary["ZR"] = "Zul'Farrak"
+WoWTranslateGlossary["zr"] = "Zul'Farrak"
+-- Maraudon (MLD = 玛拉顿 MǎLāDùn)
+WoWTranslateGlossary["MLD"] = "Maraudon"
+WoWTranslateGlossary["mld"] = "Maraudon"
+-- Stratholme (STSM = 斯坦索姆 SīTǎnSuǒMǔ)
+WoWTranslateGlossary["STSM"] = "Stratholme"
+WoWTranslateGlossary["stsm"] = "Stratholme"
+-- Dire Maul wing CN names
+WoWTranslateGlossary["厄运北"] = "Dire Maul North"
+WoWTranslateGlossary["厄运西"] = "Dire Maul West"
+WoWTranslateGlossary["厄运东"] = "Dire Maul East"
+-- Stormwind Vault (大JY = 大监狱)
+WoWTranslateGlossary["大JY"] = "Stormwind Vault"
+-- Karazhan Crypts (alternate form)
+WoWTranslateGlossary["KLZ地穴"] = "Karazhan Crypts"
+WoWTranslateGlossary["klz地穴"] = "Karazhan Crypts"
+-- AQ abbreviations (TAQ = Temple, FX = 废墟 Ruins)
+WoWTranslateGlossary["TAQ"] = "Temple of Ahn'Qiraj"
+WoWTranslateGlossary["taq"] = "Temple of Ahn'Qiraj"
+WoWTranslateGlossary["FX"] = "Ruins of Ahn'Qiraj"
+WoWTranslateGlossary["fx"] = "Ruins of Ahn'Qiraj"
+-- Onyxia (mm = female suffix in CN internet slang)
+WoWTranslateGlossary["黑龙mm"] = "Onyxia"
+-- Karazhan lower/upper (TurtleWoW Kara10/Kara40)
+WoWTranslateGlossary["卡下"] = "Karazhan (lower)"
+WoWTranslateGlossary["KLZ下"] = "Karazhan (lower)"
+WoWTranslateGlossary["卡上"] = "Karazhan (upper)"
+WoWTranslateGlossary["KLZ上"] = "Karazhan (upper)"
+
+-- ============================================================================
+-- TURTLEWOW CUSTOM CONTENT
+-- ============================================================================
+WoWTranslateGlossary["霜鬃洞穴"] = "Frostmane Hollow"
+WoWTranslateGlossary["风角峡谷"] = "Wind Horn Canyon"
+WoWTranslateGlossary["新月"] = "Crescent Grove"
+WoWTranslateGlossary["吉尔尼斯"] = "Gilneas City"
+WoWTranslateGlossary["龙吼要塞"] = "Dragonmaw Retreat"
+WoWTranslateGlossary["风暴废墟"] = "Stormwrought Ruins"
+WoWTranslateGlossary["采石场"] = "Hateforge Quarry"
+WoWTranslateGlossary["翡翠"] = "Emerald Sanctum"
+WoWTranslateGlossary["ES"] = "Emerald Sanctum"
+WoWTranslateGlossary["es"] = "Emerald Sanctum"
+
+-- ============================================================================
+-- GROUP FINDER SHORTHANDS (CN "have=need" format, e.g. 4=1 = 4 ready, need 1)
+-- ============================================================================
+WoWTranslateGlossary["4=1T"] = "LF1M Tank"
+WoWTranslateGlossary["4=1H"] = "LF1M Healer"
+WoWTranslateGlossary["4=1D"] = "LF1M DPS"
+WoWTranslateGlossary["4=1"] = "LF1M"
+WoWTranslateGlossary["3=2"] = "LF2M"
+WoWTranslateGlossary["2=3"] = "LF3M"
+WoWTranslateGlossary["1=4"] = "LF4M"
 
 -- ============================================================================
 -- CLASSES (40+ entries)

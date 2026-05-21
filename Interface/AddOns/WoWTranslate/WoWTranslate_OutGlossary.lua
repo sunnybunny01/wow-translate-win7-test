@@ -290,6 +290,73 @@ WoWTranslateOutGlossary["ninja"] = "毛"
 WoWTranslateOutGlossary["Ninja"] = "毛"
 
 -- ============================================================================
+-- DUNGEON WINGS
+-- ============================================================================
+-- Scarlet Monastery wings → XS abbreviations used on CN servers
+WoWTranslateOutGlossary["SM Graveyard"] = "XS墓地"
+WoWTranslateOutGlossary["sm graveyard"] = "XS墓地"
+WoWTranslateOutGlossary["SM Library"] = "XS图书馆"
+WoWTranslateOutGlossary["sm library"] = "XS图书馆"
+WoWTranslateOutGlossary["SM Armory"] = "XS武器库"
+WoWTranslateOutGlossary["sm armory"] = "XS武器库"
+WoWTranslateOutGlossary["SM Cathedral"] = "XS教堂"
+WoWTranslateOutGlossary["sm cathedral"] = "XS教堂"
+-- Dire Maul wings
+WoWTranslateOutGlossary["Dire Maul North"] = "厄运北"
+WoWTranslateOutGlossary["Dire Maul West"] = "厄运西"
+WoWTranslateOutGlossary["Dire Maul East"] = "厄运东"
+-- Deadmines (DM = 死矿 on CN servers)
+WoWTranslateOutGlossary["DM"] = "死矿"
+WoWTranslateOutGlossary["dm"] = "死矿"
+
+-- ============================================================================
+-- TURTLEWOW CUSTOM CONTENT
+-- ============================================================================
+WoWTranslateOutGlossary["Frostmane Hollow"] = "霜鬃洞穴"
+WoWTranslateOutGlossary["frostmane hollow"] = "霜鬃洞穴"
+WoWTranslateOutGlossary["Wind Horn Canyon"] = "风角峡谷"
+WoWTranslateOutGlossary["wind horn canyon"] = "风角峡谷"
+WoWTranslateOutGlossary["Crescent Grove"] = "新月"
+WoWTranslateOutGlossary["crescent grove"] = "新月"
+WoWTranslateOutGlossary["Gilneas City"] = "吉尔尼斯"
+WoWTranslateOutGlossary["Gilneas"] = "吉尔尼斯"
+WoWTranslateOutGlossary["gilneas"] = "吉尔尼斯"
+WoWTranslateOutGlossary["Dragonmaw Retreat"] = "龙吼要塞"
+WoWTranslateOutGlossary["dragonmaw retreat"] = "龙吼要塞"
+WoWTranslateOutGlossary["Stormwrought Ruins"] = "风暴废墟"
+WoWTranslateOutGlossary["stormwrought ruins"] = "风暴废墟"
+WoWTranslateOutGlossary["Hateforge Quarry"] = "采石场"
+WoWTranslateOutGlossary["hateforge quarry"] = "采石场"
+WoWTranslateOutGlossary["Emerald Sanctum"] = "翡翠"
+WoWTranslateOutGlossary["emerald sanctum"] = "翡翠"
+
+-- ============================================================================
+-- KARAZHAN VARIANTS (TurtleWoW Kara10/Kara40)
+-- ============================================================================
+WoWTranslateOutGlossary["Kara lower"] = "卡下"
+WoWTranslateOutGlossary["Kara 10"] = "卡下"
+WoWTranslateOutGlossary["kara lower"] = "卡下"
+WoWTranslateOutGlossary["Kara upper"] = "卡上"
+WoWTranslateOutGlossary["Kara 40"] = "卡上"
+WoWTranslateOutGlossary["kara upper"] = "卡上"
+
+-- ============================================================================
+-- GROUP FINDER: SIZE AND ROLE VARIANTS
+-- ============================================================================
+WoWTranslateOutGlossary["LF2M"] = "缺两人"
+WoWTranslateOutGlossary["lf2m"] = "缺两人"
+WoWTranslateOutGlossary["LF3M"] = "缺三人"
+WoWTranslateOutGlossary["lf3m"] = "缺三人"
+WoWTranslateOutGlossary["LF4M"] = "缺四人"
+WoWTranslateOutGlossary["lf4m"] = "缺四人"
+WoWTranslateOutGlossary["LF1M Tank"] = "缺一坦克"
+WoWTranslateOutGlossary["lf1m tank"] = "缺一坦克"
+WoWTranslateOutGlossary["LF1M Healer"] = "缺一奶妈"
+WoWTranslateOutGlossary["lf1m healer"] = "缺一奶妈"
+WoWTranslateOutGlossary["LF1M DPS"] = "缺一输出"
+WoWTranslateOutGlossary["lf1m dps"] = "缺一输出"
+
+-- ============================================================================
 -- OUTGOING GLOSSARY LOOKUP FUNCTIONS
 -- ============================================================================
 

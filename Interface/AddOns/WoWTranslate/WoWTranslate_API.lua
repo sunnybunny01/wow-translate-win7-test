@@ -16,6 +16,16 @@ local healthCheckElapsed = 0
 local HEALTH_CHECK_INTERVAL = 60  -- Re-ping DLL every 60s; wakes HTTP client after alt-tab
 local lastCallbackError = nil     -- last error captured from a pcall'd callback
 
+-- Backoff state: tracks consecutive "API error" responses (the error the DLL
+-- returns when Google's response body can't be parsed — the most common cause is
+-- a 429 rate-limit page that contains no [[[...]] translation array).
+-- "network error" and "timeout" are NOT counted — they are transient and shouldn't
+-- suppress future requests.  Three consecutive API errors trigger a backoff.
+local consecutiveApiErrors = 0
+local rateLimitedUntil     = 0    -- GetTime() timestamp; 0 = not limited
+local rateLimitBackoff     = 15   -- current backoff seconds (doubles on each hit, cap 300)
+local BACKOFF_TRIGGER      = 3    -- how many consecutive API errors before backing off
+
 -- Constants
 local POLL_INTERVAL = 0.1   -- Poll every 100ms
 local REQUEST_TIMEOUT = 30  -- Timeout requests after 30 seconds
@@ -121,6 +131,11 @@ function WoWTranslate_API.Translate(text, callback, fromLang)
         return false
     end
 
+    -- Silently skip during API error backoff window.
+    if GetTime() < rateLimitedUntil then
+        return false
+    end
+
     -- Deduplicate: the same chat message fires in every chat frame at once, producing
     -- 4-5 identical requests before any result is cached.  Only the first needs to go
     -- to the DLL; the rest will get a cache hit when the first callback completes.
@@ -206,8 +221,30 @@ local function PollTranslations()
                     -- Capture errors so /wt status can surface them for diagnosis.
                     local _cbOk, _cbErr
                     if err and err ~= "" then
+                        if err == "rate limited" then
+                            -- DLL confirmed HTTP 429: back off immediately on first hit.
+                            rateLimitedUntil     = GetTime() + rateLimitBackoff
+                            rateLimitBackoff     = math.min(rateLimitBackoff * 2, 300)
+                            consecutiveApiErrors = 0
+                        elseif err == "API error" then
+                            -- Generic parse failure: could be an undetected rate-limit
+                            -- variant or a content-policy block.  Back off after
+                            -- BACKOFF_TRIGGER consecutive hits as a safety net.
+                            consecutiveApiErrors = consecutiveApiErrors + 1
+                            if consecutiveApiErrors >= BACKOFF_TRIGGER then
+                                rateLimitedUntil     = GetTime() + rateLimitBackoff
+                                rateLimitBackoff     = math.min(rateLimitBackoff * 2, 300)
+                                consecutiveApiErrors = 0
+                            end
+                        else
+                            -- "network error", "timeout", etc. — transient, don't count.
+                            consecutiveApiErrors = 0
+                        end
                         _cbOk, _cbErr = pcall(req.callback, nil, err)
                     else
+                        -- Successful response: reset everything.
+                        consecutiveApiErrors = 0
+                        rateLimitBackoff     = 15
                         _cbOk, _cbErr = pcall(req.callback, translation, nil)
                     end
                     if not _cbOk then
@@ -293,6 +330,10 @@ function WoWTranslate_API.TranslateOutgoing(text, callback)
         return false
     end
 
+    if GetTime() < rateLimitedUntil then
+        return false
+    end
+
     -- Generate unique request ID with "out_" prefix to distinguish from incoming
     requestCounter = requestCounter + 1
     local requestId = "out_" .. tostring(requestCounter)
@@ -322,6 +363,26 @@ function WoWTranslate_API.TranslateOutgoing(text, callback)
 
     OnRequestQueued()
     return true, requestId
+end
+
+-- ============================================================================
+-- BACKOFF FUNCTIONS
+-- ============================================================================
+
+-- Returns: isLimited (bool), secondsRemaining (int, 0 if not limited)
+function WoWTranslate_API.GetRateLimitInfo()
+    local remaining = rateLimitedUntil - GetTime()
+    if remaining > 0 then
+        return true, math.ceil(remaining)
+    end
+    return false, 0
+end
+
+-- Reset backoff state; called by /wt reset so a manual recovery clears the window.
+function WoWTranslate_API.ResetBackoff()
+    consecutiveApiErrors = 0
+    rateLimitedUntil     = 0
+    rateLimitBackoff     = 15
 end
 
 -- ============================================================================

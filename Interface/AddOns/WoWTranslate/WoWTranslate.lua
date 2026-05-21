@@ -1655,6 +1655,10 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         if cbErr then
             DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444Last callback error:|r " .. cbErr)
         end
+        local rlActive, rlRemaining = WoWTranslate_API.GetRateLimitInfo()
+        if rlActive then
+            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444API backoff active:|r " .. rlRemaining .. "s remaining (use /wt reset to clear)")
+        end
 
     elseif cmd == "test" then
         local testText = arg or "\228\189\160\229\165\189"
@@ -1840,6 +1844,7 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         -- Full recovery: re-hook frames (fixes disabled handlers), clear stale API state
         local cleared = WoWTranslate_API.GetPendingCount()
         WoWTranslate_API.ClearPending()
+        WoWTranslate_API.ResetBackoff()
         dllWarnShown = false
         translationErrWarnShown = false
         HookChatFrames(true)  -- force re-install all chat frame hooks
@@ -1906,6 +1911,7 @@ end
 local function InitializeSettings()
     if not WoWTranslateDB then WoWTranslateDB = {} end
     if not WoWTranslateDebugLog then WoWTranslateDebugLog = {} end
+    if type(WoWTranslateCache) ~= "table" then WoWTranslateCache = {} end
 
     for key, value in pairs(defaults) do
         if WoWTranslateDB[key] == nil then
@@ -1983,11 +1989,48 @@ local function OnAddonLoaded()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v0.17 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.2 - " .. dllStatus .. " | /wt show")
+end
+
+-- ============================================================================
+-- PLAYER NAME TRANSLATION (Shift+RightClick on a chat name)
+-- ============================================================================
+-- Wraps ChatFrame_OnHyperlinkShow.  When the user Shift+RightClicks a player
+-- link we translate the name and print "[WT]: Name = Translation".
+-- If Translate() can't queue (rate limited / DLL busy) we fall through so the
+-- normal right-click context menu still opens — no silent failures.
+local function HookHyperlinkShow()
+    local origHyperlink = ChatFrame_OnHyperlinkShow
+    if not origHyperlink then return end
+
+    ChatFrame_OnHyperlinkShow = function(link, text, button)
+        local capturedFrame = this
+        if button == "RightButton" and IsShiftKeyDown() then
+            -- link format is "player:CharacterName"
+            local _, _, playerName = string.find(link, "^player:(.+)")
+            if playerName and playerName ~= ""
+               and WoWTranslate_API and WoWTranslate_API.IsAvailable() then
+                local sent = WoWTranslate_API.Translate(playerName,
+                    function(translation, err)
+                        local frame = capturedFrame or DEFAULT_CHAT_FRAME
+                        if translation and translation ~= "" and translation ~= playerName then
+                            frame:AddMessage("|cFF00CCFF[WT]|r: " .. playerName .. " = " .. translation)
+                        elseif err then
+                            frame:AddMessage("|cFFFFFF00[WT]: name lookup failed: " .. tostring(err) .. "|r")
+                        end
+                        -- translation == playerName means no change (already target language)
+                    end, "auto")
+                if sent then return end
+                -- Translate() returned false: rate limited or queue full — fall through
+            end
+        end
+        origHyperlink(link, text, button)
+    end
 end
 
 local function OnPlayerLogin()
     HookChatFrames()
+    HookHyperlinkShow()
 
     if not WoWTranslate_API.IsAvailable() then
         WoWTranslate_API.CheckDLL()
