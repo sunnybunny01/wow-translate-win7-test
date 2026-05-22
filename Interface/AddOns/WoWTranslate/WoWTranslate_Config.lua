@@ -76,8 +76,8 @@ end
 -- ============================================================================
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
-configFrame:SetWidth(480)
-configFrame:SetHeight(820)
+configFrame:SetWidth(580)
+configFrame:SetHeight(730)
 configFrame:SetPoint("CENTER", 0, 0)
 configFrame:SetMovable(true)
 configFrame:EnableMouse(true)
@@ -129,7 +129,7 @@ local function CreateHeader(text, yPos)
     local header = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     header:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, yPos)
     header:SetText(text)
-    header:SetTextColor(1, 0.82, 0)
+    header:SetTextColor(0, 1, 1)
     return header
 end
 
@@ -141,7 +141,7 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
     local wrapper = CreateFrame("Frame", nil, configFrame)
     wrapper:SetPoint("TOPLEFT", configFrame, "TOPLEFT", xPos, yPos)
     wrapper:SetWidth(200)
-    wrapper:SetHeight(24)
+    wrapper:SetHeight(22)
 
     -- Store config on wrapper (same pattern as language selector)
     wrapper.configKey = configKey
@@ -150,7 +150,7 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
     local cb = CreateFrame("CheckButton", nil, wrapper, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", 0, 0)
 
-    local text = wrapper:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local text = wrapper:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
     text:SetText(label)
 
@@ -165,7 +165,16 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
         local enabled = (isChecked and true) or false
 
         -- Use the global toggle functions for immediate effect
-        if key == "outgoingEnabled" then
+        if key == "translateNameplates" then
+            WoWTranslate_SetTranslateNameplates(enabled)
+            WoWTranslate_TempConfig.translateNameplates = enabled
+        elseif key == "translatePlayerNames" then
+            WoWTranslate_SetTranslatePlayerNames(enabled)
+            WoWTranslate_TempConfig.translatePlayerNames = enabled
+        elseif key == "translateGuildNames" then
+            WoWTranslate_SetTranslateGuildNames(enabled)
+            WoWTranslate_TempConfig.translateGuildNames = enabled
+        elseif key == "outgoingEnabled" then
             WoWTranslate_SetOutgoingEnabled(enabled)
             WoWTranslate_TempConfig.outgoingEnabled = enabled
         elseif key == "enabled" then
@@ -215,7 +224,7 @@ local function CreateLangSelector(label, xPos, yPos, configKey)
     frame:SetWidth(170)
     frame:SetHeight(50)
 
-    local lbl = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local lbl = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     lbl:SetPoint("TOPLEFT", 0, 0)
     lbl:SetText(label)
 
@@ -269,106 +278,110 @@ end
 -- BUILD UI
 -- ============================================================================
 
-local Y_IN_HEADER  = -50
-local Y_IN_ENABLE  = -80
-local Y_IN_NAMES   = -110
-local Y_IN_LANG    = -145
+local Y_IN_HEADER    = -50
+local Y_IN_ENABLE    = -76
+local Y_IN_NAMES     = -101
+local Y_IN_LANG      = -130
 
-local Y_SRC_LABEL  = -205
-local Y_SRC_ROW    = -230
+local Y_SRC_LABEL    = -185
+local Y_SRC_ROW      = -208
 
-local Y_SRC_ROW2 = -260
+local Y_IN_CH_LABEL  = -242
+local Y_IN_CH_ROW1   = -264
+local Y_IN_CH_ROW2   = -289
 
-local Y_IN_CH_LABEL = -300
-local Y_IN_CH_ROW1 = -325
-local Y_IN_CH_ROW2 = -355
-local Y_IN_CH_ROW3 = -385
+local Y_OUT_HEADER   = -322
+local Y_OUT_ENABLE   = -349
+local Y_OUT_LANG     = -378
 
-local Y_OUT_HEADER = -420
-local Y_OUT_ENABLE = -450
-local Y_OUT_LANG   = -485
+local Y_CH_LABEL     = -437
+local Y_CH_ROW1      = -459
+local Y_CH_ROW2      = -484
 
-local Y_CH_LABEL   = -555
-local Y_CH_ROW1    = -580
-local Y_CH_ROW2    = -610
-local Y_CH_ROW3    = -640
+local Y_COLOR        = -518
+local Y_COLOR_FOLLOW = -542
+
+local Y_EXP_HEADER   = -571
+local Y_EXP_ROW      = -593
+
+local Y_NAME_HEADER  = -625
+local Y_NAME_ROW     = -647
 
 -- Incoming Translation Section
 CreateHeader("Incoming Translation (Chat -> You)", Y_IN_HEADER)
-configFrame.elements.inEnabled = CreateCheckbox("Enable Incoming Translation", 25, Y_IN_ENABLE, "enabled", nil)
-configFrame.elements.afkDisable = CreateCheckbox("Disable while AFK", 250, Y_IN_ENABLE, "disableWhileAfk", nil)
-configFrame.elements.translateSystem = CreateCheckbox("Translate system/emotes", 25, Y_IN_NAMES, "translateSystemMessages", nil)
-configFrame.elements.inTo = CreateLangSelector("To:", 25, Y_IN_LANG, "incomingToLang")
+configFrame.elements.inEnabled     = CreateCheckbox("Enable Incoming Translation", 25,  Y_IN_ENABLE, "enabled", nil)
+configFrame.elements.afkDisable    = CreateCheckbox("Disable while AFK",          270,  Y_IN_ENABLE, "disableWhileAfk", nil)
+configFrame.elements.translateSystem = CreateCheckbox("Translate system/emotes",  25,  Y_IN_NAMES,  "translateSystemMessages", nil)
+configFrame.elements.inTo          = CreateLangSelector("To:", 25, Y_IN_LANG, "incomingToLang")
 
--- Source Language Selection (replaces FROM dropdown)
-local srcLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local roleInfoText = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+roleInfoText:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -20, Y_IN_LANG - 31)
+roleInfoText:SetText("T = tank,  N = healer,  D = dps")
+roleInfoText:SetTextColor(0.2, 1, 0.2)
+roleInfoText:SetFont("Fonts\\FRIZQT__.TTF", 9, "ITALIC")
+
+-- Source Language Selection
+local srcLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 srcLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_SRC_LABEL)
 srcLabel:SetText("Translate incoming from:")
 
 configFrame.elements.srcZH = CreateCheckbox("Chinese",  25,  Y_SRC_ROW, "enabledSourceLangs", "zh")
-configFrame.elements.srcJA = CreateCheckbox("Japanese", 135, Y_SRC_ROW, "enabledSourceLangs", "ja")
-configFrame.elements.srcKO = CreateCheckbox("Korean",   245, Y_SRC_ROW, "enabledSourceLangs", "ko")
-configFrame.elements.srcRU = CreateCheckbox("Russian",  340, Y_SRC_ROW, "enabledSourceLangs", "ru")
-configFrame.elements.srcEN = CreateCheckbox("English",  25,  Y_SRC_ROW2, "enabledSourceLangs", "en")
+configFrame.elements.srcJA = CreateCheckbox("Japanese", 115, Y_SRC_ROW, "enabledSourceLangs", "ja")
+configFrame.elements.srcKO = CreateCheckbox("Korean",   210, Y_SRC_ROW, "enabledSourceLangs", "ko")
+configFrame.elements.srcRU = CreateCheckbox("Russian",  300, Y_SRC_ROW, "enabledSourceLangs", "ru")
+configFrame.elements.srcEN = CreateCheckbox("English",  390, Y_SRC_ROW, "enabledSourceLangs", "en")
 
 -- Incoming Channels Section
-local inChLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local inChLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 inChLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_IN_CH_LABEL)
 inChLabel:SetText("Translate Incoming Channels:")
 
--- Row 1: Say, Yell, Whisper
-configFrame.elements.inChSay = CreateCheckbox("Say", 25, Y_IN_CH_ROW1, "incomingChannels", "SAY")
-configFrame.elements.inChYell = CreateCheckbox("Yell", 140, Y_IN_CH_ROW1, "incomingChannels", "YELL")
-configFrame.elements.inChWhisper = CreateCheckbox("Whisper", 255, Y_IN_CH_ROW1, "incomingChannels", "WHISPER")
+-- Row 1: Say, Yell, Whisper, Party, Guild
+configFrame.elements.inChSay     = CreateCheckbox("Say",          25,  Y_IN_CH_ROW1, "incomingChannels", "SAY")
+configFrame.elements.inChYell    = CreateCheckbox("Yell",        115,  Y_IN_CH_ROW1, "incomingChannels", "YELL")
+configFrame.elements.inChWhisper = CreateCheckbox("Whisper",     205,  Y_IN_CH_ROW1, "incomingChannels", "WHISPER")
+configFrame.elements.inChParty   = CreateCheckbox("Party",       310,  Y_IN_CH_ROW1, "incomingChannels", "PARTY")
+configFrame.elements.inChGuild   = CreateCheckbox("Guild",       405,  Y_IN_CH_ROW1, "incomingChannels", "GUILD")
 
--- Row 2: Party, Guild, Raid, English
-configFrame.elements.inChParty = CreateCheckbox("Party", 25, Y_IN_CH_ROW2, "incomingChannels", "PARTY")
-configFrame.elements.inChGuild = CreateCheckbox("Guild", 140, Y_IN_CH_ROW2, "incomingChannels", "GUILD")
-configFrame.elements.inChRaid = CreateCheckbox("Raid", 255, Y_IN_CH_ROW2, "incomingChannels", "RAID")
-configFrame.elements.inChEnglish = CreateCheckbox("English", 370, Y_IN_CH_ROW2, "incomingChannels", "ENGLISH")
-
--- Row 3: BG, Channel, Hardcore
-configFrame.elements.inChBG = CreateCheckbox("Battleground", 25, Y_IN_CH_ROW3, "incomingChannels", "BATTLEGROUND")
-configFrame.elements.inChChannel = CreateCheckbox("World/Local", 165, Y_IN_CH_ROW3, "incomingChannels", "CHANNEL")
-configFrame.elements.inChHC = CreateCheckbox("Hardcore", 310, Y_IN_CH_ROW3, "incomingChannels", "HARDCORE")
+-- Row 2: Raid, English, Battleground, World/Local, Hardcore
+configFrame.elements.inChRaid    = CreateCheckbox("Raid",         25,  Y_IN_CH_ROW2, "incomingChannels", "RAID")
+configFrame.elements.inChEnglish = CreateCheckbox("English",     115,  Y_IN_CH_ROW2, "incomingChannels", "ENGLISH")
+configFrame.elements.inChBG      = CreateCheckbox("Battleground", 210, Y_IN_CH_ROW2, "incomingChannels", "BATTLEGROUND")
+configFrame.elements.inChChannel = CreateCheckbox("World/Local",  315, Y_IN_CH_ROW2, "incomingChannels", "CHANNEL")
+configFrame.elements.inChHC      = CreateCheckbox("Hardcore",     415, Y_IN_CH_ROW2, "incomingChannels", "HARDCORE")
 
 -- Outgoing Translation Section
 CreateHeader("Outgoing Translation (You -> Chat)", Y_OUT_HEADER)
-configFrame.elements.outEnabled = CreateCheckbox("Enable Outgoing Translation", 25, Y_OUT_ENABLE, "outgoingEnabled", nil)
-configFrame.elements.outPrefix = CreateCheckbox("Send prefix with translation", 250, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
-configFrame.elements.outFrom = CreateLangSelector("From:", 25, Y_OUT_LANG, "outgoingFromLang")
-configFrame.elements.outTo = CreateLangSelector("To:", 210, Y_OUT_LANG, "outgoingToLang")
+configFrame.elements.outEnabled = CreateCheckbox("Enable Outgoing Translation",    25,  Y_OUT_ENABLE, "outgoingEnabled", nil)
+configFrame.elements.outPrefix  = CreateCheckbox("Send prefix with translation",   270, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
+configFrame.elements.outFrom    = CreateLangSelector("From:", 25,  Y_OUT_LANG, "outgoingFromLang")
+configFrame.elements.outTo      = CreateLangSelector("To:",  215,  Y_OUT_LANG, "outgoingToLang")
 
--- Channels Section
-local chLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+-- Outgoing Channels Section
+local chLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 chLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_CH_LABEL)
 chLabel:SetText("Outgoing Channels:")
 
--- Row 1: Whisper, Party, Say (spaced evenly)
-configFrame.elements.chWhisper = CreateCheckbox("Whisper", 25, Y_CH_ROW1, "outgoingChannels", "WHISPER")
-configFrame.elements.chParty = CreateCheckbox("Party", 140, Y_CH_ROW1, "outgoingChannels", "PARTY")
-configFrame.elements.chSay = CreateCheckbox("Say", 255, Y_CH_ROW1, "outgoingChannels", "SAY")
+-- Row 1: Whisper, Party, Say, Guild, Raid
+configFrame.elements.chWhisper = CreateCheckbox("Whisper",  25,  Y_CH_ROW1, "outgoingChannels", "WHISPER")
+configFrame.elements.chParty   = CreateCheckbox("Party",   115,  Y_CH_ROW1, "outgoingChannels", "PARTY")
+configFrame.elements.chSay     = CreateCheckbox("Say",     210,  Y_CH_ROW1, "outgoingChannels", "SAY")
+configFrame.elements.chGuild   = CreateCheckbox("Guild",   300,  Y_CH_ROW1, "outgoingChannels", "GUILD")
+configFrame.elements.chRaid    = CreateCheckbox("Raid",    390,  Y_CH_ROW1, "outgoingChannels", "RAID")
 
--- Row 2: Guild, Raid, Yell, English (spaced evenly)
-configFrame.elements.chGuild = CreateCheckbox("Guild", 25, Y_CH_ROW2, "outgoingChannels", "GUILD")
-configFrame.elements.chRaid = CreateCheckbox("Raid", 140, Y_CH_ROW2, "outgoingChannels", "RAID")
-configFrame.elements.chYell = CreateCheckbox("Yell", 255, Y_CH_ROW2, "outgoingChannels", "YELL")
-configFrame.elements.chEnglish = CreateCheckbox("English", 370, Y_CH_ROW2, "outgoingChannels", "ENGLISH")
-
--- Row 3: BG, Channel, Hardcore
-configFrame.elements.chBG = CreateCheckbox("Battleground", 25, Y_CH_ROW3, "outgoingChannels", "BATTLEGROUND")
-configFrame.elements.chChannel = CreateCheckbox("World/Local", 165, Y_CH_ROW3, "outgoingChannels", "CHANNEL")
-configFrame.elements.chHC = CreateCheckbox("Hardcore", 310, Y_CH_ROW3, "outgoingChannels", "HARDCORE")
+-- Row 2: Yell, English, Battleground, World/Local, Hardcore
+configFrame.elements.chYell    = CreateCheckbox("Yell",         25,  Y_CH_ROW2, "outgoingChannels", "YELL")
+configFrame.elements.chEnglish = CreateCheckbox("English",     115,  Y_CH_ROW2, "outgoingChannels", "ENGLISH")
+configFrame.elements.chBG      = CreateCheckbox("Battleground", 210, Y_CH_ROW2, "outgoingChannels", "BATTLEGROUND")
+configFrame.elements.chChannel = CreateCheckbox("World/Local",  315, Y_CH_ROW2, "outgoingChannels", "CHANNEL")
+configFrame.elements.chHC      = CreateCheckbox("Hardcore",     415, Y_CH_ROW2, "outgoingChannels", "HARDCORE")
 
 -- Translation Color Section — all controls on one line.
 -- Frames MUST anchor to configFrame (not to FontStrings) in WoW 1.12;
 -- FontStrings may anchor to Frames freely.
-local Y_COLOR = -673
-
-local colorSectionLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local colorSectionLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 colorSectionLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_COLOR)
 colorSectionLabel:SetText("Translation text color:")
--- "Translation text color:" at GameFontNormal is ~162 px wide; swatch starts at x=196
 
 local colorSwatch = CreateFrame("Button", "WoWTranslateColorSwatch", configFrame)
 colorSwatch:SetWidth(30)
@@ -383,11 +396,9 @@ colorSwatch:SetBackdrop({
 colorSwatch:SetBackdropBorderColor(0, 0, 0)
 colorSwatch:SetBackdropColor(1, 1, 1)
 
--- FontString anchoring to a Frame is always legal
-local colorSwatchLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local colorSwatchLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 colorSwatchLabel:SetPoint("LEFT", colorSwatch, "RIGHT", 6, 0)
 colorSwatchLabel:SetText("(click to pick)")
--- "(click to pick)" is ~85 px; Default button starts at x=322
 
 local colorDefaultBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 colorDefaultBtn:SetWidth(70)
@@ -404,7 +415,7 @@ local function ApplyTranslationColor(hex)
         local b = tonumber(string.sub(hex, 5, 6), 16) / 255
         colorSwatch:SetBackdropColor(r, g, b)
     else
-        colorSwatch:SetBackdropColor(0.5, 0.5, 0.5)  -- gray = default (no override)
+        colorSwatch:SetBackdropColor(0.5, 0.5, 0.5)
     end
 end
 
@@ -431,7 +442,6 @@ colorSwatch:SetScript("OnClick", function()
     end
     ColorPickerFrame.previousValues = { r, g, b }
     ColorPickerFrame:SetColorRGB(r, g, b)
-    -- Ensure the picker appears above our DIALOG-strata config frame
     ColorPickerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
     ShowUIPanel(ColorPickerFrame)
 end)
@@ -442,24 +452,25 @@ end)
 
 configFrame.elements.colorSwatch = colorSwatch
 
--- Second color row: opt in to using the source channel's native color for the body.
--- When checked, the custom swatch color is ignored.
-local Y_COLOR_FOLLOW = -698
 configFrame.elements.colorFollow = CreateCheckbox("Follow channel color", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
 
 -- Experimental Section
-local Y_EXP_HEADER = -725
 local expHeader = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 expHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_EXP_HEADER)
 expHeader:SetText("Experimental:")
 expHeader:SetTextColor(1, 0.5, 0)
 
-local Y_EXP_ROW = -748
-configFrame.elements.replaceMode = CreateCheckbox("Replace original with translation (may delay/lose messages)", 25, Y_EXP_ROW, "replaceMode", nil)
+configFrame.elements.replaceMode      = CreateCheckbox("Replace original with translation", 25,  Y_EXP_ROW, "replaceMode",         nil)
+configFrame.elements.translateNP      = CreateCheckbox("Translate Nameplates (ShaguPlates)", 290, Y_EXP_ROW, "translateNameplates", nil)
+
+-- Name Translation Section
+CreateHeader("Name Translation:", Y_NAME_HEADER)
+configFrame.elements.translateNames  = CreateCheckbox("Sender names (chat/tooltip)", 25,  Y_NAME_ROW, "translatePlayerNames", nil)
+configFrame.elements.translateGuilds = CreateCheckbox("Guild names (tooltip)",       290, Y_NAME_ROW, "translateGuildNames", nil)
 
 -- Bottom Buttons
 local clearBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-clearBtn:SetPoint("BOTTOMLEFT", configFrame, "BOTTOMLEFT", 25, 20)
+clearBtn:SetPoint("BOTTOMLEFT", configFrame, "BOTTOMLEFT", 25, 12)
 clearBtn:SetWidth(120)
 clearBtn:SetHeight(26)
 clearBtn:SetText("Clear Cache")
@@ -471,7 +482,7 @@ clearBtn:SetScript("OnClick", function()
 end)
 
 local saveBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
-saveBtn:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -25, 20)
+saveBtn:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -25, 12)
 saveBtn:SetWidth(80)
 saveBtn:SetHeight(26)
 saveBtn:SetText("Save")
@@ -500,7 +511,10 @@ local function RefreshUI()
         end
     end
     if e.colorFollow then e.colorFollow:SetChecked(cfg.translationColorFollow) end
-    if e.replaceMode then e.replaceMode:SetChecked(cfg.replaceMode) end
+    if e.replaceMode    then e.replaceMode:SetChecked(cfg.replaceMode) end
+    if e.translateNP    then e.translateNP:SetChecked(cfg.translateNameplates) end
+    if e.translateNames then e.translateNames:SetChecked(cfg.translatePlayerNames) end
+    if e.translateGuilds then e.translateGuilds:SetChecked(cfg.translateGuildNames) end
     if e.inEnabled then e.inEnabled:SetChecked(cfg.enabled) end
     if e.afkDisable then e.afkDisable:SetChecked(cfg.disableWhileAfk) end
     if e.translateSystem then e.translateSystem:SetChecked(cfg.translateSystemMessages) end

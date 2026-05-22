@@ -34,6 +34,9 @@ local outgoingQueue = {}
 local outgoingCounter = 0
 local originalSendChatMessage = SendChatMessage
 
+-- Waiters for in-flight player/guild name translations (rawName -> { callbacks = {} })
+local pendingNameTranslations = {}
+
 -- Pre-translated prefixes for outgoing messages (zero API cost)
 local TRANSLATED_PREFIXES = {
     zh = "[由WoWTranslate翻译]",
@@ -130,6 +133,11 @@ local defaults = {
     translationColor = "",       -- Hex RRGGBB for translated text body; empty = default chat color
     translationColorFollow = false,  -- If true, body color follows the source channel color
     replaceMode = false,         -- [EXPERIMENTAL] Replace original message with translation instead of appending
+    -- Name/guild translation
+    translatePlayerNames = false,
+    translateGuildNames = false,
+    translateNameplates = false,
+    outgoingButtonPos = { x = 100, y = 100 },
 }
 
 -- ============================================================================
@@ -277,6 +285,11 @@ end
 -- Converts WoW-CN specific shorthands that the static glossary cannot handle.
 local function PreprocessIncoming(text)
     if not text then return text end
+    -- Normalize Chinese sentence terminators so Google returns a single translation
+    -- segment instead of splitting on sentence boundaries (DLL only reads first segment).
+    text = string.gsub(text, "\227\128\130", ". ")   -- 。 U+3002
+    text = string.gsub(text, "\239\188\129", "! ")   -- ！ U+FF01
+    text = string.gsub(text, "\239\188\159", "? ")   -- ？ U+FF1F
     -- Currency: XG = X gold, XY = X silver. Only when not followed by a letter
     -- so "YY" (Shadowfang Keep), "GM" etc. are not touched.
     -- Run BEFORE 88 handling so "88Y" → "88s" (silver), not "bye Y".
@@ -940,6 +953,1242 @@ local function GetChannelTag(event, channelStr)
     return "WT"
 end
 
+-- ============================================================================
+-- PLAYER NAME TRANSLATION
+-- ============================================================================
+local NAME_CACHE_PREFIX = "\1wt_name:"
+
+local function NameCacheKey(name)
+    return NAME_CACHE_PREFIX .. name
+end
+
+local function ShouldTranslatePlayerName(name)
+    if not name or name == "" then return false end
+    local lang = DetectSourceLanguage(name)
+    if not lang then return false end
+    local target = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
+    return lang ~= target
+end
+
+local TRANSLATED_NAME_MARK = "|cFFFFFF00*|r"
+
+local function RgbHex(colorOrR, g, b, a)
+    local r, gr, bl, al
+    if type(colorOrR) == "table" then
+        if colorOrR.r then r, gr, bl, al = colorOrR.r, colorOrR.g, colorOrR.b, (colorOrR.a or 1) end
+    elseif tonumber(colorOrR) then
+        r, gr, bl, al = colorOrR, g, b, (a or 1)
+    end
+    if not r then return "" end
+    if r > 1 then r = 1 elseif r < 0 then r = 0 end
+    if gr > 1 then gr = 1 elseif gr < 0 then gr = 0 end
+    if bl > 1 then bl = 1 elseif bl < 0 then bl = 0 end
+    if al > 1 then al = 1 elseif al < 0 then al = 0 end
+    return string.format("|c%02x%02x%02x%02x", al*255, r*255, gr*255, bl*255)
+end
+
+local function ApplyNameCapitalization(name)
+    if not name or name == "" then return name end
+    if type(CapitalizeName) == "function" then return CapitalizeName(name) end
+    local parts = {}
+    for word in string.gfind(name, "%S+") do
+        if string.len(word) > 0 then
+            table.insert(parts, string.upper(string.sub(word,1,1)) .. string.lower(string.sub(word,2)))
+        end
+    end
+    if table.getn(parts) == 0 then return name end
+    return table.concat(parts, " ")
+end
+
+local function FindPlayerUnitByName(name)
+    if not name or name == "" then return nil end
+    local function matchUnit(unit)
+        if UnitExists(unit) and UnitIsPlayer(unit) then
+            local un = UnitName(unit)
+            local pvp = UnitPVPName(unit)
+            if un == name or (pvp and pvp == name) then return unit end
+        end
+    end
+    local unit = matchUnit("mouseover")
+    if unit then return unit end
+    unit = matchUnit("target")
+    if unit then return unit end
+    unit = matchUnit("player")
+    if unit then return unit end
+    for i = 1, 4 do
+        unit = matchUnit("party" .. i)
+        if unit then return unit end
+    end
+    for i = 1, 40 do
+        unit = matchUnit("raid" .. i)
+        if unit then return unit end
+    end
+    return nil
+end
+
+local function ResolvePlayerClass(rawName, unit)
+    if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+        local _, class = UnitClass(unit)
+        if class then return class end
+    end
+    unit = FindPlayerUnitByName(rawName)
+    if unit then
+        local _, class = UnitClass(unit)
+        if class then return class end
+    end
+    return nil
+end
+
+local function MarkTranslatedDisplayName(rawName, displayName, unit)
+    if not displayName or displayName == "" then return displayName end
+    if not rawName or displayName == rawName then return displayName end
+    local plain = StripColorCodes(displayName)
+    plain = ApplyNameCapitalization(plain)
+    local class = ResolvePlayerClass(rawName, unit)
+    if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
+        return RgbHex(RAID_CLASS_COLORS[class]) .. plain .. "|r" .. TRANSLATED_NAME_MARK
+    end
+    return plain .. TRANSLATED_NAME_MARK
+end
+
+-- Build [Name*] <Guild*>: prefix for [WT] chat lines.
+-- When translatePlayerNames is off, resolvedName == rawName so MarkTranslatedDisplayName
+-- returns rawName with no *, giving the same output as the old static senderPrefix.
+local function BuildSenderPrefix(rawName, resolvedName, channel, guildDisplay)
+    if not rawName or rawName == "" then return "" end
+    local unit = FindPlayerUnitByName(rawName)
+    local nameStr = MarkTranslatedDisplayName(rawName, resolvedName or rawName, unit)
+    local guildStr = ""
+    if guildDisplay and guildDisplay ~= "" then
+        guildStr = " <" .. guildDisplay .. "*>"
+    end
+    if channel then
+        return "|Hplayer:" .. rawName .. "|h[" .. nameStr .. "]|h|r" .. guildStr .. ": "
+    else
+        return nameStr .. guildStr .. ": "
+    end
+end
+
+local function ResolvePlayerDisplayName(rawName, callback)
+    if not callback then return end
+    if not WoWTranslateDB or not WoWTranslateDB.translatePlayerNames then
+        callback(rawName)
+        return
+    end
+    if not rawName or rawName == "" then
+        callback(rawName)
+        return
+    end
+    if not ShouldTranslatePlayerName(rawName) then
+        callback(rawName)
+        return
+    end
+    local cacheKey = NameCacheKey(rawName)
+    local cached, found = WoWTranslate_CacheGet(cacheKey)
+    if found then callback(cached); return end
+
+    local nameLang = DetectSourceLanguage(rawName)
+    if not nameLang then callback(rawName); return end
+
+    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+        callback(rawName)
+        return
+    end
+
+    local waiters = pendingNameTranslations[rawName]
+    if waiters then
+        table.insert(waiters.callbacks, callback)
+        return
+    end
+
+    waiters = { callbacks = { callback } }
+    pendingNameTranslations[rawName] = waiters
+
+    local function finish(result)
+        local w = pendingNameTranslations[rawName]
+        pendingNameTranslations[rawName] = nil
+        if w then
+            for i = 1, table.getn(w.callbacks) do w.callbacks[i](result) end
+        end
+    end
+
+    local ok = WoWTranslate_API.Translate(rawName, function(translation, err)
+        if translation and translation ~= "" then
+            local capitalized = ApplyNameCapitalization(translation)
+            WoWTranslate_CacheSave(cacheKey, capitalized)
+            finish(capitalized)
+        else
+            finish(rawName)
+        end
+    end, nameLang)
+
+    if not ok then
+        -- Queue full; poll cache briefly so the waiter doesn't hang.
+        local retries = 0
+        local pollFrame = CreateFrame("Frame")
+        local elapsed = 0
+        pollFrame:SetScript("OnUpdate", function()
+            elapsed = elapsed + arg1
+            if elapsed < 0.1 then return end
+            elapsed = 0
+            retries = retries + 1
+            local c, hit = WoWTranslate_CacheGet(cacheKey)
+            if hit then
+                pollFrame:SetScript("OnUpdate", nil)
+                finish(c)
+            elseif retries >= 50 then
+                pollFrame:SetScript("OnUpdate", nil)
+                finish(rawName)
+            end
+        end)
+    end
+end
+
+local function ResolveGuildDisplayName(rawName, callback)
+    if not WoWTranslateDB or not WoWTranslateDB.translateGuildNames then
+        callback(nil)
+        return
+    end
+    local unit = FindPlayerUnitByName(rawName)
+    if not unit then callback(nil); return end
+    local guildName = GetGuildInfo(unit)
+    if not guildName or guildName == "" then callback(nil); return end
+
+    local function hasTranslatable(s)
+        return ContainsLanguageChars(s,"zh") or ContainsLanguageChars(s,"ja")
+            or ContainsLanguageChars(s,"ko") or ContainsLanguageChars(s,"ru")
+    end
+    if not hasTranslatable(guildName) then callback(nil); return end
+
+    local cacheKey = NameCacheKey("guild:" .. guildName)
+    local cached, found = WoWTranslate_CacheGet(cacheKey)
+    if found then callback(cached); return end
+
+    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+        callback(nil); return
+    end
+    local gLang = DetectSourceLanguage(guildName)
+    if not gLang then callback(nil); return end
+
+    WoWTranslate_API.Translate(guildName, function(translation, err)
+        if translation and translation ~= "" then
+            WoWTranslate_CacheSave(cacheKey, translation)
+            callback(translation)
+        else
+            callback(nil)
+        end
+    end, gLang)
+end
+
+function WoWTranslate_SetTranslateNameplates(val)
+    if WoWTranslateDB then WoWTranslateDB.translateNameplates = val end
+end
+
+function WoWTranslate_SetTranslatePlayerNames(val)
+    if WoWTranslateDB then WoWTranslateDB.translatePlayerNames = val end
+end
+
+function WoWTranslate_SetTranslateGuildNames(val)
+    if WoWTranslateDB then WoWTranslateDB.translateGuildNames = val end
+end
+
+-- ============================================================================
+-- TOOLTIP NAME TRANSLATION
+-- ============================================================================
+local wtTooltipFrame = nil
+local TOOLTIP_MAX_LINES = 30
+
+local function TooltipIsShown(tooltip)
+    if not tooltip or not tooltip.IsShown then return false end
+    local shown = tooltip:IsShown()
+    return shown == 1 or shown == true
+end
+
+local function CaptureTooltipStatusBarState(tooltip)
+    if tooltip ~= GameTooltip then return end
+    local bar = GameTooltipStatusBar
+    if not bar then return end
+    local shown = bar:IsShown()
+    tooltip.wtStatusBarWasVisible = (shown == 1 or shown == true)
+end
+
+local function RestoreTooltipStatusBar(tooltip)
+    if tooltip ~= GameTooltip or not tooltip.wtStatusBarWasVisible then return end
+    if not TooltipIsShown(tooltip) then return end
+    local bar = GameTooltipStatusBar
+    if not bar then return end
+    local unit = tooltip.wtUnit
+    if (not unit or not UnitExists(unit)) and UnitExists("mouseover") then unit = "mouseover" end
+    if not unit or not UnitExists(unit) then return end
+    local healthMax = UnitHealthMax(unit)
+    if not healthMax or healthMax <= 0 then return end
+    bar:SetMinMaxValues(0, healthMax)
+    bar:SetValue(UnitHealth(unit))
+    bar:Show()
+    if bar.bg and bar.bg.Show then bar.bg:Show() end
+    if bar.backdrop and bar.backdrop.Show then bar.backdrop:Show() end
+    if WoWTranslate_OnTooltipLayoutRefresh then WoWTranslate_OnTooltipLayoutRefresh(tooltip, unit) end
+end
+
+local function GetTooltipTextFont(tooltip, lineIndex)
+    lineIndex = lineIndex or 1
+    if tooltip == GameTooltip then return getglobal("GameTooltipTextLeft" .. lineIndex) end
+    if ItemRefTooltip and tooltip == ItemRefTooltip then
+        return getglobal("ItemRefTooltipTextLeft" .. lineIndex)
+    end
+    if tooltip and tooltip.GetName then return getglobal(tooltip:GetName() .. "TextLeft" .. lineIndex) end
+end
+
+local function GetTooltipLinePair(tooltip, lineIndex)
+    local tipName = tooltip and tooltip.GetName and tooltip:GetName()
+    if not tipName then return nil, nil end
+    return getglobal(tipName .. "TextLeft" .. lineIndex),
+           getglobal(tipName .. "TextRight" .. lineIndex)
+end
+
+local function CaptureTooltipLine(left, right)
+    local entry = { leftText="", rightText="", leftShown=false, rightShown=false }
+    if left then
+        entry.leftText = left:GetText() or ""
+        entry.leftR, entry.leftG, entry.leftB = left:GetTextColor()
+        entry.leftShown = entry.leftText ~= ""
+    end
+    if right then
+        entry.rightText = right:GetText() or ""
+        entry.rightR, entry.rightG, entry.rightB = right:GetTextColor()
+        entry.rightShown = entry.rightText ~= ""
+    end
+    return entry
+end
+
+local function ClearTooltipLine(left, right)
+    if left and left.Hide then left:SetText(""); left:Hide() end
+    if right and right.Hide then right:SetText(""); right:Hide() end
+end
+
+local function SnapshotTooltipLines(tooltip)
+    local numLines = 1
+    if tooltip.NumLines then
+        numLines = tooltip:NumLines()
+        if numLines < 1 then numLines = 1 end
+    end
+    local snap = { numLines = numLines, lines = {} }
+    for i = 1, numLines do
+        local left, right = GetTooltipLinePair(tooltip, i)
+        snap.lines[i] = CaptureTooltipLine(left, right)
+    end
+    return snap
+end
+
+local function WipeTooltipTextLines(tooltip)
+    local tipName = tooltip and tooltip.GetName and tooltip:GetName()
+    if not tipName then return end
+    for i = 1, TOOLTIP_MAX_LINES do
+        ClearTooltipLine(getglobal(tipName.."TextLeft"..i), getglobal(tipName.."TextRight"..i))
+    end
+end
+
+local function ClearTooltipNameHeader(tooltip)
+    if not tooltip then return end
+    if wtTooltipFrame and wtTooltipFrame.watchTooltip == tooltip then
+        wtTooltipFrame.watchTooltip = nil
+        wtTooltipFrame:SetScript("OnUpdate", nil)
+    end
+    if tooltip.ClearLines then tooltip:ClearLines() end
+    WipeTooltipTextLines(tooltip)
+    tooltip.wtLineSnapshot = nil
+    tooltip.wtLine1Text = nil
+    tooltip.wtAddedNameLine = nil
+    tooltip.wtWtInternalAddLine = nil
+    tooltip.wtNameResolvePending = nil
+    tooltip.wtStatusBarWasVisible = nil
+end
+
+local function ReplayTooltipLine(tooltip, entry)
+    if not entry then return end
+    local hasLeft  = entry.leftShown  and entry.leftText  and entry.leftText  ~= ""
+    local hasRight = entry.rightShown and entry.rightText and entry.rightText ~= ""
+    if hasRight and tooltip.AddDoubleLine then
+        tooltip:AddDoubleLine(
+            hasLeft and entry.leftText or "", entry.rightText,
+            entry.leftR or 1, entry.leftG or 1, entry.leftB or 1,
+            entry.rightR or 1, entry.rightG or 1, entry.rightB or 1)
+    elseif hasLeft and tooltip.AddLine then
+        tooltip:AddLine(entry.leftText, entry.leftR or 1, entry.leftG or 1, entry.leftB or 1)
+    elseif hasRight and tooltip.AddLine then
+        tooltip:AddLine(entry.rightText, entry.rightR or 1, entry.rightG or 1, entry.rightB or 1)
+    end
+end
+
+-- Fallback for tooltips without ClearLines/AddLine: prepend only the first line.
+local function InsertTooltipNamePrepend(tooltip, text)
+    local left1 = GetTooltipTextFont(tooltip, 1)
+    if not left1 then return end
+    local orig = left1:GetText() or ""
+    if tooltip.wtLine1Text then return end
+    tooltip.wtLine1Text = orig
+    CaptureTooltipStatusBarState(tooltip)
+    left1:SetText(text .. "|n" .. orig)
+    tooltip.wtAddedNameLine = true
+    tooltip:Show()
+    RestoreTooltipStatusBar(tooltip)
+end
+
+-- Rebuild tooltip with translated lines prepended; original lines follow.
+local function InsertTooltipLines(tooltip, lines)
+    if not tooltip or tooltip.wtAddedNameLine then return end
+    if not lines or table.getn(lines) == 0 then return end
+    if not TooltipIsShown(tooltip) then return end
+    if not tooltip.ClearLines or not tooltip.AddLine then
+        InsertTooltipNamePrepend(tooltip, lines[1])
+        return
+    end
+    tooltip.wtLineSnapshot = SnapshotTooltipLines(tooltip)
+    CaptureTooltipStatusBarState(tooltip)
+    tooltip.wtWtInternalAddLine = true
+    tooltip:ClearLines()
+    for i = 1, table.getn(lines) do
+        tooltip:AddLine(lines[i], 1, 1, 1)
+    end
+    for i = 1, tooltip.wtLineSnapshot.numLines do
+        ReplayTooltipLine(tooltip, tooltip.wtLineSnapshot.lines[i])
+    end
+    tooltip.wtWtInternalAddLine = nil
+    local numLines = (tooltip.NumLines and tooltip:NumLines()) or 0
+    for i = numLines + 1, TOOLTIP_MAX_LINES do
+        ClearTooltipLine(GetTooltipLinePair(tooltip, i))
+    end
+    tooltip.wtAddedNameLine = true
+    tooltip:Show()
+    RestoreTooltipStatusBar(tooltip)
+end
+
+local function ArmTooltipLayoutWatch(tooltip)
+    if not wtTooltipFrame or not tooltip then return end
+    wtTooltipFrame.watchTooltip = tooltip
+    wtTooltipFrame.watchLines = (tooltip.NumLines and tooltip:NumLines()) or 0
+    wtTooltipFrame.watchElapsed = 0
+    wtTooltipFrame.layoutDelay = 0
+    wtTooltipFrame.layoutPending = true
+    wtTooltipFrame:SetScript("OnUpdate", function()
+        local tip = wtTooltipFrame.watchTooltip
+        if not tip or not TooltipIsShown(tip) or not tip.wtAddedNameLine then
+            wtTooltipFrame.watchTooltip = nil
+            wtTooltipFrame:SetScript("OnUpdate", nil)
+            return
+        end
+        wtTooltipFrame.watchElapsed = wtTooltipFrame.watchElapsed + arg1
+        local n = (tip.NumLines and tip:NumLines()) or 0
+        if n ~= wtTooltipFrame.watchLines then
+            wtTooltipFrame.watchLines = n
+            wtTooltipFrame.layoutDelay = 0
+            wtTooltipFrame.layoutPending = true
+        elseif wtTooltipFrame.layoutPending then
+            wtTooltipFrame.layoutDelay = wtTooltipFrame.layoutDelay + arg1
+            if wtTooltipFrame.layoutDelay >= 0.12 then
+                tip:Show()
+                RestoreTooltipStatusBar(tip)
+                wtTooltipFrame.layoutPending = nil
+                wtTooltipFrame.layoutDelay = 0
+            end
+        end
+        if wtTooltipFrame.watchElapsed >= 1.0 then
+            wtTooltipFrame.watchTooltip = nil
+            wtTooltipFrame:SetScript("OnUpdate", nil)
+        end
+    end)
+end
+
+local function ParsePlayerHyperlink(link)
+    if not link then return nil end
+    if string.sub(link, 1, 7) ~= "player:" then return nil end
+    local name = string.sub(link, 8)
+    if name and name ~= "" then return name end
+    return nil
+end
+
+local function FindPlayerUnitFromTooltipText(tipText)
+    if not tipText or tipText == "" then return nil end
+    local plain = StripColorCodes(tipText)
+    local function matchUnit(unit)
+        if UnitExists(unit) and UnitIsPlayer(unit) then
+            local name = UnitName(unit)
+            local pvp  = UnitPVPName(unit)
+            if name and (string.find(plain, name, 1, true) or (pvp and string.find(plain, pvp, 1, true))) then
+                return unit, name, pvp
+            end
+        end
+    end
+    local unit, name, pvp = matchUnit("mouseover")
+    if unit then return unit, name, pvp end
+    unit, name, pvp = matchUnit("target")
+    if unit then return unit, name, pvp end
+    unit, name, pvp = matchUnit("player")
+    if unit then return unit, name, pvp end
+    for i = 1, 4 do unit, name, pvp = matchUnit("party"..i); if unit then return unit, name, pvp end end
+    for i = 1, 40 do unit, name, pvp = matchUnit("raid"..i); if unit then return unit, name, pvp end end
+    return nil
+end
+
+local function ResolveTooltipPlayerName(tooltip)
+    if tooltip.wtPlayerName and tooltip.wtPlayerName ~= "" then
+        local altName = nil
+        if tooltip.wtUnit and UnitExists(tooltip.wtUnit) then altName = UnitPVPName(tooltip.wtUnit) end
+        return tooltip.wtPlayerName, altName
+    end
+    if tooltip.wtUnit and UnitExists(tooltip.wtUnit) and UnitIsPlayer(tooltip.wtUnit) then
+        local name = UnitName(tooltip.wtUnit)
+        local pvp  = UnitPVPName(tooltip.wtUnit)
+        if name and name ~= "" then tooltip.wtPlayerName = name; return name, pvp end
+    end
+    local fs = GetTooltipTextFont(tooltip, 1)
+    if fs and fs.GetText then
+        local tipText = fs:GetText()
+        local unit, name, pvp = FindPlayerUnitFromTooltipText(tipText)
+        if name then tooltip.wtUnit = unit; tooltip.wtPlayerName = name; return name, pvp end
+        local plain = StripColorCodes(tipText)
+        if plain and plain ~= "" and ShouldTranslatePlayerName(plain) then
+            tooltip.wtPlayerName = plain; return plain, nil
+        end
+    end
+    return nil
+end
+
+local function UpdateTooltipPlayerNames(tooltip)
+    if not tooltip then return end
+    if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
+    if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+    if not WoWTranslateDB.translatePlayerNames then return end
+    if not TooltipIsShown(tooltip) then return end
+    if tooltip.wtAddedNameLine then return end
+
+    local rawName = ResolveTooltipPlayerName(tooltip)
+    if not rawName or rawName == "" then return end
+    if not ShouldTranslatePlayerName(rawName) then return end
+
+    if tooltip.wtNameResolvePending == rawName then return end
+    tooltip.wtNameResolvePending = rawName
+
+    ResolvePlayerDisplayName(rawName, function(displayName)
+        tooltip.wtNameResolvePending = nil
+        if not TooltipIsShown(tooltip) then return end
+        if tooltip.wtPlayerName ~= rawName then return end
+        if tooltip.wtAddedNameLine then return end
+
+        ResolveGuildDisplayName(rawName, function(guildDisplay)
+            if not TooltipIsShown(tooltip) then return end
+            if tooltip.wtAddedNameLine then return end
+
+            local lines = {}
+            local marked = MarkTranslatedDisplayName(rawName, displayName, tooltip.wtUnit)
+            if marked and marked ~= rawName then
+                table.insert(lines, marked)
+            end
+            if guildDisplay and guildDisplay ~= "" then
+                table.insert(lines, "<" .. guildDisplay .. "*>")
+            end
+            if table.getn(lines) > 0 then
+                InsertTooltipLines(tooltip, lines)
+                if tooltip.wtAddedNameLine then ArmTooltipLayoutWatch(tooltip) end
+            end
+        end)
+    end)
+end
+
+-- ============================================================================
+-- NAMEPLATE PLAYER NAME TRANSLATION
+-- ============================================================================
+-- Works with ShaguPlates (ShaguTweaks.libnameplate + ShaguPlates.nameplates).
+-- Vanilla nameplate scan is also attempted as a fallback.
+-- All behavior is gated on WoWTranslateDB.translateNameplates.
+
+local function PlayerNameClassColorEnabled()
+    return WoWTranslateDB and WoWTranslateDB.playerNameClassColor
+end
+
+local function StripTranslatedNameMark(text)
+    if not text then return text end
+    local plain = StripColorCodes(text)
+    if plain then plain = string.gsub(plain, "%*$", "") end
+    return plain
+end
+
+local function StripOverheadDisplaySuffix(text)
+    if not text then return text end
+    local plain = StripTranslatedNameMark(text)
+    local prev
+    repeat
+        prev = plain
+        local p = string.find(plain, " %(", 1, true)
+        if p then plain = string.sub(plain, 1, p - 1) end
+    until plain == prev or plain == ""
+    return plain
+end
+
+local function NormalizeTruncatedNameplateName(text)
+    if not text then return text end
+    local plain = StripOverheadDisplaySuffix(text)
+    if plain and string.sub(plain, -3) == "..." then
+        plain = string.sub(plain, 1, -4)
+    end
+    return plain
+end
+
+local function OverheadDisplayMatchesRawName(text, rawName)
+    if not text or not rawName or text == "" or rawName == "" then return false end
+    if text == rawName then return true end
+    return StripOverheadDisplaySuffix(text) == rawName
+end
+
+-- Stubs: only used when playerNameClassColor is enabled (not exposed in UI).
+local GetNameplateFactionRgb
+local GetNameplateNameTextRgb
+GetNameplateFactionRgb  = function(plate) return 1, 0, 0 end
+GetNameplateNameTextRgb = function(rawName, plate) return nil end
+
+local function ColorizeNameplateDisplayText(rawName, text, plate)
+    if not text or text == "" then return text end
+    if not PlayerNameClassColorEnabled() then return StripColorCodes(text) end
+    local plain = ApplyNameCapitalization(StripColorCodes(text))
+    local r, g, b = GetNameplateNameTextRgb(rawName, plate)
+    if r then return RgbHex(r, g, b) .. plain .. "|r" end
+    return plain
+end
+
+local function FormatNameplateOverlayText(rawName, displayName)
+    displayName = displayName or rawName
+    local isTranslated = rawName and displayName ~= rawName
+    local plain = ApplyNameCapitalization(StripColorCodes(isTranslated and displayName or rawName))
+    if not isTranslated then return plain end
+    return plain .. "*"
+end
+
+local function FormatNameplateVanillaText(rawName, displayName, plate)
+    displayName = displayName or rawName
+    if not rawName or displayName == rawName then
+        return ColorizeNameplateDisplayText(rawName, rawName, plate)
+    end
+    local colored = ColorizeNameplateDisplayText(rawName, displayName, plate)
+    return colored .. TRANSLATED_NAME_MARK
+end
+
+local function ApplyNameplateNameText(fs, formatted, parent, rawName, unit)
+    if not fs or not formatted then return end
+    local tr, tg, tb, ta = 1, 1, 1, 1
+    local colorSet = false
+    if PlayerNameClassColorEnabled() and rawName and parent then
+        local cr, cg, cb = GetNameplateNameTextRgb(rawName, parent)
+        if cr then tr, tg, tb = cr, cg, cb; colorSet = true end
+    end
+    if not colorSet and parent then
+        local overlay = parent.nameplate
+        if overlay and overlay.original and overlay.original.name
+                and overlay.original.name.GetTextColor then
+            tr, tg, tb, ta = overlay.original.name:GetTextColor()
+        elseif fs.GetTextColor then
+            tr, tg, tb, ta = fs:GetTextColor()
+        end
+    elseif not colorSet and fs.GetTextColor then
+        tr, tg, tb, ta = fs:GetTextColor()
+    end
+    fs:SetText(formatted)
+    if fs.SetTextColor then fs:SetTextColor(tr, tg, tb, ta or 1) end
+    if fs.GetStringWidth and fs.SetWidth then
+        local w = fs:GetStringWidth()
+        if w and w > 0 then fs:SetWidth(w + 8) end
+    end
+end
+
+local NAMEPLATE_OBJECTORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
+local wtNameplateShaguHooked = false
+local wtShaguPlatesHooked    = false
+local wtNameplateRegistry    = {}
+local wtNameplateScanFrame   = nil
+local wtNameplateScanInitialized = 0
+local NAMEPLATE_NAME_UPDATE_INTERVAL = 0.2
+
+local function NameplateNameUpdateDue(plate)
+    if not plate then return true end
+    local now = GetTime()
+    if plate.wtNextNameUpdate and now < plate.wtNextNameUpdate then return false end
+    plate.wtNextNameUpdate = now + NAMEPLATE_NAME_UPDATE_INTERVAL
+    return true
+end
+
+local function NameplateFrameVisible(plate)
+    if not plate then return false end
+    if plate.IsVisible then
+        local v = plate:IsVisible()
+        if v and v ~= 0 then return true end
+    end
+    if plate.IsShown then
+        local s = plate:IsShown()
+        if s and s ~= 0 then return true end
+    end
+    return false
+end
+
+local function PruneNameplateRegistry()
+    for plate in pairs(wtNameplateRegistry) do
+        if not NameplateFrameVisible(plate) then
+            wtNameplateRegistry[plate] = nil
+        end
+    end
+end
+
+local function IsNamePlateFrame(frame)
+    if not frame or not frame.GetObjectType then return false end
+    local otype = frame:GetObjectType()
+    if otype ~= "Button" and otype ~= "Frame" then return false end
+    local regions = frame:GetRegions()
+    if regions and regions.GetObjectType and regions.GetTexture then
+        if regions:GetObjectType() == "Texture"
+                and regions:GetTexture() == "Interface\\Tooltips\\Nameplate-Border" then
+            return true
+        end
+    end
+    if frame.GetChildren then
+        local child = frame:GetChildren()
+        if child and frame.GetRegions then
+            for i, object in pairs({ frame:GetRegions() }) do
+                if object and object.GetObjectType
+                        and object:GetObjectType() == "FontString" then
+                    local t = object:GetText()
+                    if t and t ~= "" and not string.find(t, "^Level ") then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function AssignNameplateRegions(plate)
+    for i, object in pairs({ plate:GetRegions() }) do
+        if NAMEPLATE_OBJECTORDER[i] then plate[NAMEPLATE_OBJECTORDER[i]] = object end
+    end
+end
+
+local function GetNameplateOverlay(parent)
+    if not parent then return nil end
+    local overlay = parent.nameplate
+    if overlay and overlay.name and overlay.name.GetText and overlay.name.SetText then
+        return overlay
+    end
+end
+
+local function EnsureVanillaTranslateNameFont(plate)
+    if not plate or GetNameplateOverlay(plate) then return nil end
+    if plate.wtTranslateName and plate.wtTranslateName.GetText then
+        return plate.wtTranslateName
+    end
+    AssignNameplateRegions(plate)
+    local src = plate.name
+    if not src or not src.GetText then return nil end
+    local fs = plate:CreateFontString("WoWTranslateNameplateName", "OVERLAY")
+    if src.GetFont and fs.SetFont then
+        local font, size, flags = src:GetFont()
+        if font then fs:SetFont(font, size or 12, flags) end
+    end
+    if src.GetJustifyH and fs.SetJustifyH then fs:SetJustifyH(src:GetJustifyH()) end
+    if src.GetJustifyV and fs.SetJustifyV then fs:SetJustifyV(src:GetJustifyV()) end
+    local point, relTo, relPoint, xOfs, yOfs = src:GetPoint()
+    if point then
+        fs:SetPoint(point, relTo or plate, relPoint or point, xOfs or 0, yOfs or 0)
+    else
+        fs:SetPoint("BOTTOM", plate, "TOP", 0, 0)
+    end
+    plate.wtTranslateName = fs
+    if src.SetAlpha then src:SetAlpha(0) end
+    fs:Show()
+    return fs
+end
+
+local function SyncVanillaNameplateSourceText(plate, rawName)
+    if not plate or not rawName or rawName == "" or GetNameplateOverlay(plate) then return end
+    AssignNameplateRegions(plate)
+    local src = plate.name
+    if not src or not src.SetText then return end
+    if src:GetText() ~= rawName then src:SetText(rawName) end
+    if src.SetAlpha then src:SetAlpha(0) end
+end
+
+local function GetNameplateDisplayNameFont(parent)
+    local overlay = GetNameplateOverlay(parent)
+    if overlay then return overlay.name end
+    local vanillaFs = EnsureVanillaTranslateNameFont(parent)
+    if vanillaFs then return vanillaFs end
+    AssignNameplateRegions(parent)
+    if parent.name and parent.name.GetText then
+        local t = parent.name:GetText()
+        if t and t ~= "" then return parent.name end
+    end
+    for i, object in pairs({ parent:GetRegions() }) do
+        if NAMEPLATE_OBJECTORDER[i] == "name" and object and object.GetText then
+            return object
+        end
+    end
+    for i, object in pairs({ parent:GetRegions() }) do
+        if object and object.GetObjectType
+                and object:GetObjectType() == "FontString" then
+            local t = object:GetText()
+            if t and t ~= "" and not string.find(t, "^Level ") then return object end
+        end
+    end
+end
+
+local function CaptureVanillaNameplateSource(plate)
+    if not plate then return nil end
+    if plate.wtSourceName and plate.wtSourceName ~= "" then return plate.wtSourceName end
+    AssignNameplateRegions(plate)
+    local fs = plate.name
+    if not fs or not fs.GetText then fs = GetNameplateDisplayNameFont(plate) end
+    if fs and fs.GetText then
+        local t = fs:GetText()
+        if t and t ~= "" then
+            if plate.wtLastDisplay and t == plate.wtLastDisplay then return plate.wtSourceName end
+            local plain = NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
+            if plain and plain ~= "" then
+                plate.wtSourceName = plain
+                return plain
+            end
+        end
+    end
+    return nil
+end
+
+local function ResolveNameplateRawName(plate)
+    if not plate then return nil end
+    local overlay = GetNameplateOverlay(plate)
+    if overlay then
+        if overlay.cache and overlay.cache.name and overlay.cache.name ~= "" then
+            return NormalizeTruncatedNameplateName(overlay.cache.name)
+        end
+        if overlay.original and overlay.original.name and overlay.original.name.GetText then
+            local t = overlay.original.name:GetText()
+            if t and t ~= "" then
+                return NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
+            end
+        end
+    end
+    return CaptureVanillaNameplateSource(plate) or plate.wtRawName
+end
+
+local function UpdateNameplateFromPlate(plate, skipClutterUpdate)
+    if not plate then return end
+    if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
+    if not WoWTranslateDB.translateNameplates then return end
+    if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+
+    local overlay = GetNameplateOverlay(plate)
+    local fs = GetNameplateDisplayNameFont(plate)
+    if not fs or not fs.GetText then return end
+
+    local current = fs:GetText()
+    if not current or current == "" then return end
+    if plate.wtLastDisplay and current == plate.wtLastDisplay then return end
+
+    local rawName = ResolveNameplateRawName(plate)
+    if not rawName or rawName == "" then return end
+    plate.wtRawName = rawName
+    if not overlay then
+        plate.wtSourceName = rawName
+        SyncVanillaNameplateSourceText(plate, rawName)
+        fs = GetNameplateDisplayNameFont(plate)
+        if not fs or not fs.GetText then return end
+    end
+
+    if overlay and plate.wtLastDisplay then
+        local plain = NormalizeTruncatedNameplateName(current)
+        if plain == rawName or OverheadDisplayMatchesRawName(current, rawName) then
+            plate.wtLastDisplay = nil
+        end
+    end
+
+    if not ShouldTranslatePlayerName(rawName) then return end
+
+    local cached, found = WoWTranslate_CacheGet(NameCacheKey(rawName))
+    if found then
+        local function applyDisplay(displayName)
+            if plate.wtRawName ~= rawName then return end
+            local formatted
+            if overlay then
+                formatted = FormatNameplateOverlayText(rawName, displayName)
+            else
+                formatted = FormatNameplateVanillaText(rawName, displayName, plate)
+            end
+            if plate.wtLastDisplay ~= formatted then
+                ApplyNameplateNameText(fs, formatted, plate, rawName, nil)
+                plate.wtLastDisplay = formatted
+                if overlay and overlay.name and overlay.name.Show then overlay.name:Show() end
+            end
+        end
+        applyDisplay(cached)
+        return
+    end
+
+    if plate.wtResolvePending then return end
+    plate.wtResolvePending = true
+    ResolvePlayerDisplayName(rawName, function(displayName)
+        plate.wtResolvePending = nil
+        if plate.wtRawName ~= rawName then return end
+        local formatted
+        if overlay then
+            formatted = FormatNameplateOverlayText(rawName, displayName)
+        else
+            formatted = FormatNameplateVanillaText(rawName, displayName, plate)
+        end
+        if plate.wtLastDisplay ~= formatted then
+            ApplyNameplateNameText(fs, formatted, plate, rawName, nil)
+            plate.wtLastDisplay = formatted
+            if overlay and overlay.name and overlay.name.Show then overlay.name:Show() end
+        end
+    end)
+end
+
+local function RunNameplateNameUpdate(plate, skipClutter)
+    if not plate or not NameplateNameUpdateDue(plate) then return end
+    if GetNameplateOverlay(plate) then
+        UpdateNameplateFromPlate(plate, true)
+    else
+        UpdateNameplateFromPlate(plate, skipClutter)
+    end
+end
+
+local function ResetNameplatePlateState(plate)
+    if not plate then return end
+    plate.wtSourceName    = nil
+    plate.wtRawName       = nil
+    plate.wtLastDisplay   = nil
+    plate.wtResolvePending = nil
+    plate.wtNextNameUpdate = nil
+    plate.wtHealthbar     = nil
+    if plate.name and plate.name.SetAlpha then plate.name:SetAlpha(1) end
+end
+
+local function RegisterStandaloneNameplate(plate)
+    if not plate then return end
+    wtNameplateRegistry[plate] = true
+    AssignNameplateRegions(plate)
+    if plate.wtWoWTranslateShowHooked then return end
+    local oldShow = plate:GetScript("OnShow")
+    plate:SetScript("OnShow", function()
+        if oldShow then oldShow() end
+        ResetNameplatePlateState(plate)
+        AssignNameplateRegions(plate)
+        if plate.name and plate.name.GetText then
+            local t = plate.name:GetText()
+            if t and t ~= "" then
+                plate.wtSourceName = NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
+                SyncVanillaNameplateSourceText(plate, plate.wtSourceName)
+                EnsureVanillaTranslateNameFont(plate)
+            end
+        end
+    end)
+    plate.wtWoWTranslateShowHooked = true
+end
+
+local function ScanWorldFrameNameplates()
+    local parentcount = WorldFrame:GetNumChildren()
+    if wtNameplateScanInitialized < parentcount then
+        local childs = { WorldFrame:GetChildren() }
+        for i = wtNameplateScanInitialized + 1, parentcount do
+            local plate = childs[i]
+            if plate and IsNamePlateFrame(plate) then
+                RegisterStandaloneNameplate(plate)
+            end
+        end
+        wtNameplateScanInitialized = parentcount
+    end
+    PruneNameplateRegistry()
+    for plate in pairs(wtNameplateRegistry) do
+        if NameplateFrameVisible(plate) and not GetNameplateOverlay(plate) then
+            RunNameplateNameUpdate(plate, false)
+        end
+    end
+end
+
+function WoWTranslate_OnNameplateUpdate(plate)
+    plate = plate or this
+    if not plate then return end
+    if not GetNameplateOverlay(plate) and not (ShaguPlates and ShaguPlates.nameplates) then return end
+    if GetNameplateOverlay(plate) then
+        RunNameplateNameUpdate(plate, true)
+    else
+        RunNameplateNameUpdate(plate, false)
+    end
+end
+
+function WoWTranslate_OnNameplateShow(plate)
+    plate = plate or this
+    if not plate then return end
+    ResetNameplatePlateState(plate)
+end
+
+local function HookShaguNameplates()
+    local lib = ShaguTweaks and ShaguTweaks.libnameplate
+    if not lib then return false end
+    if not lib.wtWoWTranslateHooked then
+        if ShaguPlates and ShaguPlates.nameplates then
+            table.insert(lib.OnUpdate, function(plate)
+                WoWTranslate_OnNameplateUpdate(plate)
+            end)
+        end
+        table.insert(lib.OnShow, function(plate)
+            WoWTranslate_OnNameplateShow(plate)
+        end)
+        lib.wtWoWTranslateHooked = true
+    end
+    wtNameplateShaguHooked = true
+    return true
+end
+
+local function HookShaguPlatesNameplates()
+    if not ShaguPlates or not ShaguPlates.nameplates then return false end
+    local np = ShaguPlates.nameplates
+    if np.wtWoWTranslateWrapped then
+        wtShaguPlatesHooked = true
+        return true
+    end
+    local base = np.wtWoWTranslateBase or np.OnDataChanged
+    if not base then return false end
+    if not np.wtWoWTranslateBase then np.wtWoWTranslateBase = base end
+    np.OnDataChanged = function(self, overlay)
+        np.wtWoWTranslateBase(self, overlay)
+        local parent = overlay and overlay.parent
+        if not parent then return end
+        if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
+        if not WoWTranslateDB.translateNameplates then return end
+        if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
+        parent.wtNextNameUpdate = nil
+        UpdateNameplateFromPlate(parent, true)
+    end
+    np.wtWoWTranslateWrapped = true
+    wtShaguPlatesHooked = true
+    return true
+end
+
+local wtNameplateScanElapsed = 0
+local NAMEPLATE_SCAN_INTERVAL = 0.25
+
+local function StartStandaloneNameplateScanner()
+    if wtNameplateScanFrame then return end
+    wtNameplateScanFrame = CreateFrame("Frame", "WoWTranslateNameplateScanner", UIParent)
+    wtNameplateScanFrame:SetScript("OnUpdate", function()
+        wtNameplateScanElapsed = wtNameplateScanElapsed + arg1
+        if wtNameplateScanElapsed < NAMEPLATE_SCAN_INTERVAL then return end
+        wtNameplateScanElapsed = 0
+        ScanWorldFrameNameplates()
+    end)
+end
+
+local function HookNameplates()
+    if not WoWTranslateDB or not WoWTranslateDB.translateNameplates then return end
+    HookShaguNameplates()
+    HookShaguPlatesNameplates()
+    StartStandaloneNameplateScanner()
+end
+
+-- ============================================================================
+local function HookGameTooltip()
+    if not GameTooltip then return end
+    if GameTooltip.WoWTranslateOrigSetUnit then
+        GameTooltip.SetUnit = GameTooltip.WoWTranslateOrigSetUnit
+    end
+    if GameTooltip.WoWTranslateOrigSetHyperlink then
+        GameTooltip.SetHyperlink = GameTooltip.WoWTranslateOrigSetHyperlink
+    end
+    if not GameTooltip.WoWTranslateOrigSetUnit then
+        GameTooltip.WoWTranslateOrigSetUnit = GameTooltip.SetUnit
+    end
+    if GameTooltip.SetHyperlink and not GameTooltip.WoWTranslateOrigSetHyperlink then
+        GameTooltip.WoWTranslateOrigSetHyperlink = GameTooltip.SetHyperlink
+    end
+    GameTooltip.WoWTranslateTooltipHooked = true
+    local origSetUnit = GameTooltip.WoWTranslateOrigSetUnit
+    function GameTooltip:SetUnit(unit)
+        ClearTooltipNameHeader(GameTooltip)
+        GameTooltip.wtUnit = unit
+        GameTooltip.wtPlayerName = nil
+        GameTooltip.wtNameResolvePending = nil
+        if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+            GameTooltip.wtPlayerName = UnitName(unit)
+        end
+        if origSetUnit then return origSetUnit(self, unit) end
+    end
+    if GameTooltip.WoWTranslateOrigSetHyperlink then
+        local origSetHyperlink = GameTooltip.WoWTranslateOrigSetHyperlink
+        function GameTooltip:SetHyperlink(link)
+            ClearTooltipNameHeader(GameTooltip)
+            GameTooltip.wtUnit = nil
+            GameTooltip.wtPlayerName = ParsePlayerHyperlink(link)
+            GameTooltip.wtNameResolvePending = nil
+            if origSetHyperlink then return origSetHyperlink(self, link) end
+        end
+    end
+    if not wtTooltipFrame then wtTooltipFrame = getglobal("WoWTranslateTooltipFrame") end
+    if not wtTooltipFrame then
+        wtTooltipFrame = CreateFrame("Frame", "WoWTranslateTooltipFrame", GameTooltip)
+        local function DeferUpdateGameTooltip()
+            if not TooltipIsShown(GameTooltip) then return end
+            if GameTooltip.wtAddedNameLine or GameTooltip.wtNameResolvePending then return end
+            UpdateTooltipPlayerNames(GameTooltip)
+        end
+        local function ArmTooltipDefer()
+            wtTooltipFrame.elapsed = 0
+            wtTooltipFrame:SetScript("OnUpdate", function()
+                if not TooltipIsShown(GameTooltip) then
+                    wtTooltipFrame.elapsed = 0
+                    wtTooltipFrame:SetScript("OnUpdate", nil)
+                    return
+                end
+                if GameTooltip.wtAddedNameLine or GameTooltip.wtNameResolvePending then
+                    wtTooltipFrame:SetScript("OnUpdate", nil)
+                    return
+                end
+                wtTooltipFrame.elapsed = wtTooltipFrame.elapsed + arg1
+                if wtTooltipFrame.elapsed < 0.4 then return end
+                wtTooltipFrame:SetScript("OnUpdate", nil)
+                DeferUpdateGameTooltip()
+            end)
+        end
+        wtTooltipFrame:SetScript("OnShow", function() ArmTooltipDefer() end)
+        if not GameTooltip.WoWTranslateOrigOnHide then
+            GameTooltip.WoWTranslateOrigOnHide = GameTooltip:GetScript("OnHide")
+        end
+        local origOnHide = GameTooltip.WoWTranslateOrigOnHide
+        GameTooltip:SetScript("OnHide", function()
+            ClearTooltipNameHeader(GameTooltip)
+            GameTooltip.wtUnit = nil
+            GameTooltip.wtPlayerName = nil
+            GameTooltip.wtNameResolvePending = nil
+            if origOnHide then origOnHide() end
+        end)
+    end
+end
+
+local function HookItemRefTooltip()
+    if not ItemRefTooltip then return end
+    if ItemRefTooltip.WoWTranslateOrigSetHyperlink then
+        ItemRefTooltip.SetHyperlink = ItemRefTooltip.WoWTranslateOrigSetHyperlink
+    end
+    if ItemRefTooltip.SetHyperlink and not ItemRefTooltip.WoWTranslateOrigSetHyperlink then
+        ItemRefTooltip.WoWTranslateOrigSetHyperlink = ItemRefTooltip.SetHyperlink
+    end
+    ItemRefTooltip.WoWTranslateTooltipHooked = true
+    if ItemRefTooltip.WoWTranslateOrigSetHyperlink then
+        local origSetHyperlink = ItemRefTooltip.WoWTranslateOrigSetHyperlink
+        function ItemRefTooltip:SetHyperlink(link)
+            ClearTooltipNameHeader(ItemRefTooltip)
+            ItemRefTooltip.wtUnit = nil
+            ItemRefTooltip.wtPlayerName = ParsePlayerHyperlink(link)
+            ItemRefTooltip.wtNameResolvePending = nil
+            if origSetHyperlink then return origSetHyperlink(self, link) end
+        end
+    end
+    local refFrame = getglobal("WoWTranslateItemRefTooltipFrame")
+    if not refFrame then
+        refFrame = CreateFrame("Frame", "WoWTranslateItemRefTooltipFrame", ItemRefTooltip)
+        refFrame:SetScript("OnShow", function()
+            refFrame.elapsed = 0
+            refFrame:SetScript("OnUpdate", function()
+                if not TooltipIsShown(ItemRefTooltip) then
+                    refFrame:SetScript("OnUpdate", nil); return
+                end
+                if ItemRefTooltip.wtAddedNameLine or ItemRefTooltip.wtNameResolvePending then
+                    refFrame:SetScript("OnUpdate", nil); return
+                end
+                refFrame.elapsed = refFrame.elapsed + arg1
+                if refFrame.elapsed < 0.25 then return end
+                refFrame:SetScript("OnUpdate", nil)
+                UpdateTooltipPlayerNames(ItemRefTooltip)
+            end)
+        end)
+        if not ItemRefTooltip.WoWTranslateOrigOnHide then
+            ItemRefTooltip.WoWTranslateOrigOnHide = ItemRefTooltip:GetScript("OnHide")
+        end
+        local refOrigOnHide = ItemRefTooltip.WoWTranslateOrigOnHide
+        ItemRefTooltip:SetScript("OnHide", function()
+            ClearTooltipNameHeader(ItemRefTooltip)
+            ItemRefTooltip.wtPlayerName = nil
+            ItemRefTooltip.wtNameResolvePending = nil
+            if refOrigOnHide then refOrigOnHide() end
+        end)
+    end
+end
+
+local function HookTooltips()
+    HookGameTooltip()
+    HookItemRefTooltip()
+    HookNameplates()
+end
+
+-- ============================================================================
+-- OUTGOING TOGGLE BUTTON
+-- ============================================================================
+local outgoingButton = nil
+
+local function UpdateOutgoingButton()
+    if not outgoingButton then return end
+    if WoWTranslateDB and WoWTranslateDB.outgoingEnabled then
+        outgoingButton:SetText("|cFF00FF00OUT:ON|r")
+    else
+        outgoingButton:SetText("|cFFFF4444OUT:OFF|r")
+    end
+end
+
+local function CreateOutgoingButton()
+    if outgoingButton then return end
+    local f = CreateFrame("Button", "WoWTranslateOutgoingButton", UIParent)
+    outgoingButton = f
+    f:SetWidth(48)
+    f:SetHeight(15)
+    f:SetFrameStrata("HIGH")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "",
+        tile = true, tileSize = 8, edgeSize = 0,
+        insets = { left=0, right=0, top=0, bottom=0 },
+    })
+    f:SetBackdropColor(0, 0, 0, 0.7)
+
+    local pos = WoWTranslateDB and WoWTranslateDB.outgoingButtonPos or { x=100, y=100 }
+    f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", pos.x, pos.y)
+
+    local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetAllPoints(f)
+    f.label = label
+
+    f:SetScript("OnMouseDown", function()
+        -- Toggle on click release (OnMouseUp handles it); just visual feedback.
+    end)
+    f:SetScript("OnMouseUp", function()
+        if arg1 == "LeftButton" then
+            local nowEnabled = not (WoWTranslateDB and WoWTranslateDB.outgoingEnabled)
+            WoWTranslate_SetOutgoingEnabled(nowEnabled)
+        end
+    end)
+    f:SetScript("OnDragStart", function() f:StartMoving() end)
+    f:SetScript("OnDragStop", function()
+        f:StopMovingOrSizing()
+        local x = f:GetLeft()
+        local y = f:GetBottom()
+        if WoWTranslateDB then
+            WoWTranslateDB.outgoingButtonPos = { x = x, y = y }
+        end
+    end)
+
+    -- Expose SetText on the frame so UpdateOutgoingButton works cleanly.
+    function f:SetText(text) self.label:SetText(text) end
+
+    UpdateOutgoingButton()
+end
+
+-- ============================================================================
 -- force=true clears WoWTranslateHooked so all frames are re-hooked (used by /wt reset).
 -- origScript is saved on the frame so re-hooking always wraps the real WoW handler,
 -- never a previously-installed WoWTranslate wrapper (no double-wrapping).
@@ -993,9 +2242,6 @@ local function HookChatFrames(force)
 
                             capturedThis.AddMessage = function(f, a, b, c, d, e, g)
                                 messageShownInFrame = true
-                                -- Restore to the previous hook (ShaguTweaks etc.) rather than nil.
-                                -- Setting nil would expose the raw WoW metatable method, silently
-                                -- breaking any AddMessage chains installed by other addons.
                                 capturedThis.AddMessage = origFrameAddMsg
                                 if WoWTranslateDB and WoWTranslateDB.replaceMode then
                                     -- Suppress the original; hold args so we can show the original
@@ -1082,17 +2328,11 @@ local function HookChatFrames(force)
                             local incomingTargetLang = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
                             if detectedLang == incomingTargetLang then FlushOriginal(); return end
 
-                            local senderPrefix = ""
-                            if capturedArg2 and capturedArg2 ~= "" then
-                                if channel then
-                                    -- Real player chat: wrap name as a clickable player link.
-                                    -- |r after ]|h matches WoW's native chat format, which lets
-                                    -- ShaguTweaks chat-levels match its pattern and annotate levels.
-                                    senderPrefix = "|Hplayer:" .. capturedArg2 .. "|h[" .. capturedArg2 .. "]|h|r: "
-                                else
-                                    senderPrefix = capturedArg2 .. ": "
-                                end
-                            end
+                            -- Resolved name/guild; set by ResolveNamesAndPost before BuildWTMsg.
+                            -- Default to rawName so BuildSenderPrefix matches old behavior when
+                            -- translatePlayerNames/translateGuildNames are both off.
+                            local resolvedSenderName = capturedArg2
+                            local resolvedGuildName  = nil
 
                             local channelTag   = GetChannelTag(capturedEvent, capturedArg4)
                             local msgColor     = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
@@ -1118,7 +2358,19 @@ local function HookChatFrames(force)
                                     bodyHex = chanColorHex or ""
                                 end
                                 local displayBody = bodyHex ~= "" and ("|cFF" .. bodyHex .. body .. "|r") or body
-                                return prefix .. " " .. senderPrefix .. displayBody
+                                local sp = BuildSenderPrefix(capturedArg2, resolvedSenderName, channel, resolvedGuildName)
+                                return prefix .. " " .. sp .. displayBody
+                            end
+
+                            -- Resolves player display name (async when translatePlayerNames is on,
+                            -- synchronous no-op when off), then calls postFn with the built WTMsg.
+                            -- Guild translation is tooltip-only; chat lines never show guild.
+                            local function ResolveNamesAndPost(body, postFn)
+                                ResolvePlayerDisplayName(capturedArg2, function(dName)
+                                    resolvedSenderName = dName
+                                    resolvedGuildName  = nil
+                                    postFn(BuildWTMsg(body))
+                                end)
                             end
 
                             local function PostWTMsg(wtMsg)
@@ -1175,10 +2427,8 @@ local function HookChatFrames(force)
                             if found then
                                 DebugLog("Cache hit")
                                 local reconstructed = ReconstructMessage(segments, cached)
-                                local wtMsg = BuildWTMsg(reconstructed)
-                                -- Sync path: each frame handles itself; clear shared table entry.
                                 frameTranslationTargets[capturedArg1] = nil
-                                PostWTMsg(wtMsg)
+                                ResolveNamesAndPost(reconstructed, PostWTMsg)
                                 return
                             end
 
@@ -1191,7 +2441,7 @@ local function HookChatFrames(force)
                                         DebugLog("Outgoing glossary exact (incoming EN):", r)
                                         WoWTranslate_CacheSave(capturedArg1, r)
                                         frameTranslationTargets[capturedArg1] = nil
-                                        PostWTMsg(BuildWTMsg(ReconstructMessage(segments, r)))
+                                        ResolveNamesAndPost(ReconstructMessage(segments, r), PostWTMsg)
                                         return
                                     end
                                 end
@@ -1211,10 +2461,8 @@ local function HookChatFrames(force)
                                 if glossaryResult then
                                     DebugLog("Glossary exact:", glossaryResult)
                                     WoWTranslate_CacheSave(capturedArg1, glossaryResult)
-                                    local reconstructed = ReconstructMessage(segments, glossaryResult)
-                                    local wtMsg = BuildWTMsg(reconstructed)
                                     frameTranslationTargets[capturedArg1] = nil
-                                    PostWTMsg(wtMsg)
+                                    ResolveNamesAndPost(ReconstructMessage(segments, glossaryResult), PostWTMsg)
                                     return
                                 end
                                 local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
@@ -1222,10 +2470,8 @@ local function HookChatFrames(force)
                                     if not DetectSourceLanguage(partialResult) then
                                         DebugLog("Glossary full partial:", partialResult)
                                         WoWTranslate_CacheSave(capturedArg1, partialResult)
-                                        local reconstructed = ReconstructMessage(segments, partialResult)
-                                        local wtMsg = BuildWTMsg(reconstructed)
                                         frameTranslationTargets[capturedArg1] = nil
-                                        PostWTMsg(wtMsg)
+                                        ResolveNamesAndPost(ReconstructMessage(segments, partialResult), PostWTMsg)
                                         return
                                     end
                                     textToTranslate = partialResult
@@ -1241,48 +2487,52 @@ local function HookChatFrames(force)
                                 FlushOriginal(); return
                             end
 
-                            -- replaceMode: transfer captured args to pendingMessages so the
-                            -- 30s safety net can restore the original if the DLL never responds.
+                            -- replaceMode: capture original args before the API call, but only
+                            -- register the 30s safety-net entry for frames whose callback will
+                            -- actually fire. WoW fires every chat frame's OnEvent for the same
+                            -- message; the API deduplicates (returns false for frames 2-N).
+                            -- Those frames get the translation via frameTranslationTargets.
+                            -- Storing a safety-net entry for deduplicated frames causes the
+                            -- original to reappear 30s later even when translation succeeded.
                             local replacePendingKey = nil
+                            local replacePendingData = nil
                             if pendingArgs then
-                                replacePendingKey = "r|" .. tostring(capturedThis) .. "|" .. capturedArg1
-                                pendingMessages[replacePendingKey] = {
+                                replacePendingData = {
                                     originalAddMessage = origFrameAddMsg,
                                     frame              = pendingArgs.f,
                                     originalText       = pendingArgs.a,
                                     r = pendingArgs.b, g = pendingArgs.c, b = pendingArgs.d,
                                     id = pendingArgs.e, holdTime = pendingArgs.g,
-                                    timestamp = GetTime()
                                 }
                                 pendingArgs = nil
                             end
 
-                            WoWTranslate_API.Translate(textToTranslate, function(translation, err)
+                            local apiQueued = WoWTranslate_API.Translate(textToTranslate, function(translation, err)
                                 if translation and translation ~= "" then
                                     DebugLog("Translation:", string.sub(translation, 1, 50))
                                     translationErrWarnShown = false
                                     WoWTranslate_CacheSave(capturedArg1, translation)
                                     local reconstructed = ReconstructMessage(segments, translation)
-                                    local wtMsg = BuildWTMsg(reconstructed)
                                     -- replaceMode: original was suppressed; clear safety net entry.
                                     if replacePendingKey then
                                         pendingMessages[replacePendingKey] = nil
                                     end
                                     -- Post to every frame that displayed the original message.
-                                    -- Only fall back to DEFAULT_CHAT_FRAME when target tracking
-                                    -- was lost (targets nil) — never when it's just absent from
-                                    -- targets, which would add the message to a wrong tab.
+                                    -- Capture targets before async name resolution so the table
+                                    -- is not modified by concurrent messages.
                                     local targets = frameTranslationTargets[capturedArg1]
                                     frameTranslationTargets[capturedArg1] = nil
-                                    if wimWhisperUser and type(WIM_PostMessage) == "function" then
-                                        WIM_PostMessage(wimWhisperUser, wtMsg, 3)
-                                    elseif targets then
-                                        for targetFrame in pairs(targets) do
-                                            targetFrame:AddMessage(wtMsg)
+                                    ResolveNamesAndPost(reconstructed, function(wtMsg)
+                                        if wimWhisperUser and type(WIM_PostMessage) == "function" then
+                                            WIM_PostMessage(wimWhisperUser, wtMsg, 3)
+                                        elseif targets then
+                                            for targetFrame in pairs(targets) do
+                                                targetFrame:AddMessage(wtMsg)
+                                            end
+                                        else
+                                            DEFAULT_CHAT_FRAME:AddMessage(wtMsg)
                                         end
-                                    else
-                                        DEFAULT_CHAT_FRAME:AddMessage(wtMsg)
-                                    end
+                                    end)
                                 else
                                     DebugLog("Translation error:", tostring(err))
                                     frameTranslationTargets[capturedArg1] = nil
@@ -1301,6 +2551,15 @@ local function HookChatFrames(force)
                                     end
                                 end
                             end, detectedLang)
+                            -- Only store the safety-net entry when this frame's callback will
+                            -- fire (apiQueued=true). Deduplicated frames (false) will receive
+                            -- the translation via frameTranslationTargets when the first frame's
+                            -- callback fires, so their suppressed original can be discarded.
+                            if apiQueued and replacePendingData then
+                                replacePendingKey = "r|" .. tostring(capturedThis) .. "|" .. capturedArg1
+                                replacePendingData.timestamp = GetTime()
+                                pendingMessages[replacePendingKey] = replacePendingData
+                            end
                         end)  -- end pcall
                         if not _ok then DebugLog("OnEvent hook error:", tostring(_err)) end
                     end)
@@ -1308,6 +2567,7 @@ local function HookChatFrames(force)
                     DebugLog("Hooked", frameName, "via SetScript")
                 end
             end
+
         end
     end
 end
@@ -1558,7 +2818,7 @@ end
 -- GLOBAL FUNCTIONS FOR CONFIG UI
 -- ============================================================================
 
--- Toggle outgoing translation (called from config UI)
+-- Toggle outgoing translation (called from config UI and outgoing button)
 function WoWTranslate_SetOutgoingEnabled(enabled)
     if enabled then
         WoWTranslateDB.outgoingEnabled = true
@@ -1567,6 +2827,7 @@ function WoWTranslate_SetOutgoingEnabled(enabled)
         WoWTranslateDB.outgoingEnabled = false
         RemoveOutgoingHook()
     end
+    UpdateOutgoingButton()
 end
 
 -- Toggle incoming translation (called from config UI)
@@ -1642,8 +2903,8 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
 
         DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Status:")
         DEFAULT_CHAT_FRAME:AddMessage("  DLL: " .. dllStatus)
-        DEFAULT_CHAT_FRAME:AddMessage("  Incoming (CN->EN): " .. (WoWTranslateDB.enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
-        DEFAULT_CHAT_FRAME:AddMessage("  Outgoing (EN->CN): " .. outgoingStatus)
+        DEFAULT_CHAT_FRAME:AddMessage("  Incoming: " .. (WoWTranslateDB.enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
+        DEFAULT_CHAT_FRAME:AddMessage("  Outgoing: " .. outgoingStatus)
         DEFAULT_CHAT_FRAME:AddMessage("  Outgoing Hook: " .. hookStatus)
         DEFAULT_CHAT_FRAME:AddMessage("  Glossary entries: " .. glossaryCount)
         DEFAULT_CHAT_FRAME:AddMessage("  Cached translations: " .. cacheStats.entries)
@@ -1771,18 +3032,16 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
     -- =====================================================================
     elseif cmd == "outgoing" then
         if arg == "on" or arg == "enable" then
-            WoWTranslateDB.outgoingEnabled = true
-            InstallOutgoingHook()
+            WoWTranslate_SetOutgoingEnabled(true)
             DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Outgoing translation enabled|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  Your English messages will be translated to Chinese")
         elseif arg == "off" or arg == "disable" then
-            WoWTranslateDB.outgoingEnabled = false
-            RemoveOutgoingHook()
+            WoWTranslate_SetOutgoingEnabled(false)
             DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Outgoing translation disabled|r")
         else
+            -- No arg: toggle
+            WoWTranslate_SetOutgoingEnabled(not WoWTranslateDB.outgoingEnabled)
             local status = WoWTranslateDB.outgoingEnabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
             DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Outgoing translation: " .. status)
-            DEFAULT_CHAT_FRAME:AddMessage("  Usage: /wt outgoing on|off")
         end
 
     elseif cmd == "outchannel" then
@@ -1820,7 +3079,7 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
 
     elseif cmd == "testout" then
         local testText = arg or "Hello, how are you?"
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing outgoing translation (EN->CN):")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing outgoing translation:")
         DEFAULT_CHAT_FRAME:AddMessage("  Input: " .. testText)
 
         if not WoWTranslate_API.IsAvailable() then
@@ -1899,7 +3158,7 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /wt clearcache - Clear cache")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt debug - Toggle debug mode")
         DEFAULT_CHAT_FRAME:AddMessage("  -- Outgoing --")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt outgoing on|off - Toggle outgoing translation")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt outgoing - toggle outgoing translation (on/off to set explicitly)")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt outchannel [type] - Show/toggle channel settings")
         DEFAULT_CHAT_FRAME:AddMessage("  /wt prefix <text> - Set message prefix")
     end
@@ -1971,6 +3230,20 @@ local function InitializeSettings()
     if WoWTranslateDB.enabledSourceLangs.en == nil then
         WoWTranslateDB.enabledSourceLangs.en = false
     end
+
+    -- Migration: new name/guild translation settings (v1.3+)
+    if WoWTranslateDB.translatePlayerNames == nil then
+        WoWTranslateDB.translatePlayerNames = false
+    end
+    if WoWTranslateDB.translateGuildNames == nil then
+        WoWTranslateDB.translateGuildNames = false
+    end
+    if WoWTranslateDB.translateNameplates == nil then
+        WoWTranslateDB.translateNameplates = false
+    end
+    if WoWTranslateDB.outgoingButtonPos == nil then
+        WoWTranslateDB.outgoingButtonPos = { x = 100, y = 100 }
+    end
 end
 
 local function OnAddonLoaded()
@@ -1983,17 +3256,20 @@ local function OnAddonLoaded()
         pcall(WoWTranslate_MinimapButton_Init)
     end
 
+    HookTooltips()
+    CreateOutgoingButton()
+
     local dllOk = WoWTranslate_API.CheckDLL()
 
     local glossaryCount = WoWTranslate_GetGlossaryCount()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.2 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.3 - " .. dllStatus .. " | /wt show")
 end
 
 -- ============================================================================
--- PLAYER NAME TRANSLATION (Shift+RightClick on a chat name)
+-- PLAYER NAME TRANSLATION (Shift+RightClick on a chat name hyperlink)
 -- ============================================================================
 -- Wraps ChatFrame_OnHyperlinkShow.  When the user Shift+RightClicks a player
 -- link we translate the name and print "[WT]: Name = Translation".
@@ -2018,7 +3294,6 @@ local function HookHyperlinkShow()
                         elseif err then
                             frame:AddMessage("|cFFFFFF00[WT]: name lookup failed: " .. tostring(err) .. "|r")
                         end
-                        -- translation == playerName means no change (already target language)
                     end, "auto")
                 if sent then return end
                 -- Translate() returned false: rate limited or queue full — fall through
@@ -2031,6 +3306,7 @@ end
 local function OnPlayerLogin()
     HookChatFrames()
     HookHyperlinkShow()
+    HookTooltips()
 
     if not WoWTranslate_API.IsAvailable() then
         WoWTranslate_API.CheckDLL()
