@@ -174,6 +174,9 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
         elseif key == "translateGuildNames" then
             WoWTranslate_SetTranslateGuildNames(enabled)
             WoWTranslate_TempConfig.translateGuildNames = enabled
+        elseif key == "showOutgoingButton" then
+            WoWTranslate_SetOutgoingButtonVisible(enabled)
+            WoWTranslate_TempConfig.showOutgoingButton = enabled
         elseif key == "outgoingEnabled" then
             WoWTranslate_SetOutgoingEnabled(enabled)
             WoWTranslate_TempConfig.outgoingEnabled = enabled
@@ -352,8 +355,9 @@ configFrame.elements.inChHC      = CreateCheckbox("Hardcore",     415, Y_IN_CH_R
 
 -- Outgoing Translation Section
 CreateHeader("Outgoing Translation (You -> Chat)", Y_OUT_HEADER)
-configFrame.elements.outEnabled = CreateCheckbox("Enable Outgoing Translation",    25,  Y_OUT_ENABLE, "outgoingEnabled", nil)
-configFrame.elements.outPrefix  = CreateCheckbox("Send prefix with translation",   270, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
+configFrame.elements.outEnabled   = CreateCheckbox("Enable Outgoing Translation",  25,  Y_OUT_ENABLE, "outgoingEnabled",       nil)
+configFrame.elements.outPrefix    = CreateCheckbox("Send prefix with translation",  210, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
+configFrame.elements.outShowBtn   = CreateCheckbox("Toggle Button",                 410, Y_OUT_ENABLE, "showOutgoingButton",    nil)
 configFrame.elements.outFrom    = CreateLangSelector("From:", 25,  Y_OUT_LANG, "outgoingFromLang")
 configFrame.elements.outTo      = CreateLangSelector("To:",  215,  Y_OUT_LANG, "outgoingToLang")
 
@@ -518,8 +522,9 @@ local function RefreshUI()
     if e.inEnabled then e.inEnabled:SetChecked(cfg.enabled) end
     if e.afkDisable then e.afkDisable:SetChecked(cfg.disableWhileAfk) end
     if e.translateSystem then e.translateSystem:SetChecked(cfg.translateSystemMessages) end
-    if e.outEnabled then e.outEnabled:SetChecked(cfg.outgoingEnabled) end
-    if e.outPrefix then e.outPrefix:SetChecked(cfg.outgoingPrefixEnabled) end
+    if e.outEnabled  then e.outEnabled:SetChecked(cfg.outgoingEnabled) end
+    if e.outPrefix   then e.outPrefix:SetChecked(cfg.outgoingPrefixEnabled) end
+    if e.outShowBtn  then e.outShowBtn:SetChecked(cfg.showOutgoingButton) end
 
     -- Source language checkboxes
     local srcLangs = cfg.enabledSourceLangs or {}

@@ -138,6 +138,7 @@ local defaults = {
     translateGuildNames = false,
     translateNameplates = false,
     outgoingButtonPos = { x = 100, y = 100 },
+    showOutgoingButton = true,
 }
 
 -- ============================================================================
@@ -307,6 +308,11 @@ local function PreprocessIncoming(text)
     text = string.gsub(text, "([^%w])88$",        "%1bye")
     text = string.gsub(text, "^88([^%w])",         "bye%1")
     text = string.gsub(text, "^88$",               "bye")
+    -- 666 = "awesome / well played" (CN superlative slang). Isolated only.
+    text = string.gsub(text, "([^%w])666([^%w])", "%1Good job!%2")
+    text = string.gsub(text, "([^%w])666$",        "%1Good job!")
+    text = string.gsub(text, "^666([^%w])",         "Good job!%1")
+    text = string.gsub(text, "^666$",               "Good job!")
     -- 999 = res me (jiǔ = save/rescue, sounds like 9). Isolated only.
     text = string.gsub(text, "([^%w])999([^%w])", "%1res me%2")
     text = string.gsub(text, "([^%w])999$",        "%1res me")
@@ -1057,14 +1063,50 @@ end
 local function BuildSenderPrefix(rawName, resolvedName, channel, guildDisplay)
     if not rawName or rawName == "" then return "" end
     local unit = FindPlayerUnitByName(rawName)
-    local nameStr = MarkTranslatedDisplayName(rawName, resolvedName or rawName, unit)
+    local resolved = resolvedName or rawName
+    local isTranslated = resolved ~= rawName
     local guildStr = ""
     if guildDisplay and guildDisplay ~= "" then
         guildStr = " <" .. guildDisplay .. "*>"
     end
     if channel then
-        return "|Hplayer:" .. rawName .. "|h[" .. nameStr .. "]|h|r" .. guildStr .. ": "
+        if isTranslated then
+            -- ShaguTweaks chat-levels/social-colors patterns require [rawName]
+            -- in the display to match, which breaks when we replace it. Instead,
+            -- build class color and level ourselves: read level from ShaguTweaks'
+            -- player cache (ShaguTweaks_cache.players[name].level) with UnitLevel
+            -- as fallback, and apply difficulty color via GetDifficultyColor.
+            local plain = ApplyNameCapitalization(StripColorCodes(resolved))
+            -- Mirror social-colors.lua: use ShaguTweaks.GetUnitData for the class lookup
+            -- since it has the same broad reach (unit frames + ShaguTweaks player cache)
+            -- that lets social-colors color the raw name. Fall back to ResolvePlayerClass.
+            local classColor = nil
+            if ShaguTweaks and type(ShaguTweaks.GetUnitData) == "function" then
+                local class = ShaguTweaks.GetUnitData(rawName)
+                if class and class ~= UNKNOWN then
+                    classColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+                end
+            end
+            if not classColor then
+                local class = ResolvePlayerClass(rawName, unit)
+                classColor = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+            end
+            local coloredName = classColor and (RgbHex(classColor) .. plain .. "|r") or plain
+            local levelStr = ""
+            local shaguData = ShaguTweaks_cache and ShaguTweaks_cache["players"] and ShaguTweaks_cache["players"][rawName]
+            local lvl = shaguData and shaguData.level
+            if (not lvl or lvl <= 0) and unit then lvl = UnitLevel(unit) end
+            if lvl and lvl > 0 then
+                local dr, dg, db = GetDifficultyColor(lvl)
+                levelStr = " " .. RgbHex(dr, dg, db) .. tostring(lvl) .. "|r"
+            end
+            return "|Hplayer:" .. rawName .. "|h[" .. coloredName .. "]|h|r"
+                .. TRANSLATED_NAME_MARK .. levelStr .. guildStr .. ": "
+        else
+            return "|Hplayer:" .. rawName .. "|h[" .. rawName .. "]|h|r" .. guildStr .. ": "
+        end
     else
+        local nameStr = MarkTranslatedDisplayName(rawName, resolved, unit)
         return nameStr .. guildStr .. ": "
     end
 end
@@ -2185,7 +2227,21 @@ local function CreateOutgoingButton()
     -- Expose SetText on the frame so UpdateOutgoingButton works cleanly.
     function f:SetText(text) self.label:SetText(text) end
 
+    if WoWTranslateDB and WoWTranslateDB.showOutgoingButton == false then
+        f:Hide()
+    else
+        f:Show()
+    end
     UpdateOutgoingButton()
+end
+
+local function ApplyOutgoingButtonVisibility()
+    if not outgoingButton then return end
+    if WoWTranslateDB and WoWTranslateDB.showOutgoingButton == false then
+        outgoingButton:Hide()
+    else
+        outgoingButton:Show()
+    end
 end
 
 -- ============================================================================
@@ -2830,6 +2886,11 @@ function WoWTranslate_SetOutgoingEnabled(enabled)
     UpdateOutgoingButton()
 end
 
+function WoWTranslate_SetOutgoingButtonVisible(enabled)
+    if WoWTranslateDB then WoWTranslateDB.showOutgoingButton = enabled end
+    ApplyOutgoingButtonVisibility()
+end
+
 -- Toggle incoming translation (called from config UI)
 function WoWTranslate_SetIncomingEnabled(enabled)
     WoWTranslateDB.enabled = enabled
@@ -3244,6 +3305,9 @@ local function InitializeSettings()
     if WoWTranslateDB.outgoingButtonPos == nil then
         WoWTranslateDB.outgoingButtonPos = { x = 100, y = 100 }
     end
+    if WoWTranslateDB.showOutgoingButton == nil then
+        WoWTranslateDB.showOutgoingButton = true
+    end
 end
 
 local function OnAddonLoaded()
@@ -3265,7 +3329,7 @@ local function OnAddonLoaded()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.3 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.4 - " .. dllStatus .. " | /wt show")
 end
 
 -- ============================================================================

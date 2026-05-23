@@ -54,7 +54,9 @@ WoWTranslateOutGlossary["Razorfen Kraul"] = "剃刀沼泽"
 WoWTranslateOutGlossary["Uldaman"] = "奥达曼"
 WoWTranslateOutGlossary["Zul'Farrak"] = "祖尔法拉克"
 WoWTranslateOutGlossary["Maraudon"] = "玛拉顿"
-WoWTranslateOutGlossary["Sunken Temple"] = "沉没的神庙"
+WoWTranslateOutGlossary["Sunken Temple"] = "TK"
+WoWTranslateOutGlossary["sunken temple"] = "TK"
+WoWTranslateOutGlossary["ST"] = "TK"
 WoWTranslateOutGlossary["Ragefire Chasm"] = "怒焰裂谷"
 WoWTranslateOutGlossary["Blackfathom Deeps"] = "黑暗深渊"
 
@@ -722,6 +724,78 @@ WoWTranslateOutGlossary["Uldum"] = "奥丹姆"
 WoWTranslateOutGlossary["uldum"] = "奥丹姆"
 WoWTranslateOutGlossary["Scarlet Enclave"] = "血色领地"
 WoWTranslateOutGlossary["scarlet enclave"] = "血色领地"
+
+-- ============================================================================
+-- RACES
+-- ============================================================================
+WoWTranslateOutGlossary["Dwarf"] = "矮人"
+WoWTranslateOutGlossary["dwarf"] = "矮人"
+WoWTranslateOutGlossary["Night Elf"] = "暗夜精灵"
+WoWTranslateOutGlossary["night elf"] = "暗夜精灵"
+WoWTranslateOutGlossary["Gnome"] = "侏儒"
+WoWTranslateOutGlossary["gnome"] = "侏儒"
+WoWTranslateOutGlossary["Human"] = "人类"
+WoWTranslateOutGlossary["human"] = "人类"
+WoWTranslateOutGlossary["Orc"] = "兽人"
+WoWTranslateOutGlossary["orc"] = "兽人"
+WoWTranslateOutGlossary["Tauren"] = "牛头人"
+WoWTranslateOutGlossary["tauren"] = "牛头人"
+WoWTranslateOutGlossary["Troll"] = "巨魔"
+WoWTranslateOutGlossary["troll"] = "巨魔"
+WoWTranslateOutGlossary["Undead"] = "亡灵"
+WoWTranslateOutGlossary["undead"] = "亡灵"
+
+-- ============================================================================
+-- DUNGEON ABBREVIATIONS (outgoing — map EN short forms to CN pinyin)
+-- ============================================================================
+WoWTranslateOutGlossary["WC"] = "哀嚎洞穴"
+WoWTranslateOutGlossary["wc"] = "哀嚎洞穴"
+WoWTranslateOutGlossary["SFK"] = "影牙城堡"
+WoWTranslateOutGlossary["sfk"] = "影牙城堡"
+WoWTranslateOutGlossary["BFD"] = "黑暗深渊"
+WoWTranslateOutGlossary["bfd"] = "黑暗深渊"
+WoWTranslateOutGlossary["RFK"] = "剃刀沼泽"
+WoWTranslateOutGlossary["rfk"] = "剃刀沼泽"
+WoWTranslateOutGlossary["RFD"] = "剃刀高地"
+WoWTranslateOutGlossary["rfd"] = "剃刀高地"
+WoWTranslateOutGlossary["LBRS"] = "HX"
+WoWTranslateOutGlossary["lbrs"] = "HX"
+WoWTranslateOutGlossary["UBRS"] = "HS"
+WoWTranslateOutGlossary["ubrs"] = "HS"
+
+-- ============================================================================
+-- UTILITY & LFG
+-- ============================================================================
+WoWTranslateOutGlossary["Dungeon"] = "副本"
+WoWTranslateOutGlossary["dungeon"] = "副本"
+WoWTranslateOutGlossary["Instance"] = "副本"
+WoWTranslateOutGlossary["instance"] = "副本"
+WoWTranslateOutGlossary["Gear"] = "装备"
+WoWTranslateOutGlossary["gear"] = "装备"
+WoWTranslateOutGlossary["LFM"] = "来"
+WoWTranslateOutGlossary["lfm"] = "来"
+WoWTranslateOutGlossary["Need Water"] = "要水"
+WoWTranslateOutGlossary["need water"] = "要水"
+WoWTranslateOutGlossary["Need Bread"] = "要面包"
+WoWTranslateOutGlossary["need bread"] = "要面包"
+WoWTranslateOutGlossary["Mage Portal"] = "开门"
+WoWTranslateOutGlossary["mage portal"] = "开门"
+WoWTranslateOutGlossary["Open portal"] = "开门"
+WoWTranslateOutGlossary["open portal"] = "开门"
+
+-- ============================================================================
+-- BATTLEGROUND CALLOUTS
+-- ============================================================================
+WoWTranslateOutGlossary["Gold Mine"] = "矿"
+WoWTranslateOutGlossary["gold mine"] = "矿"
+WoWTranslateOutGlossary["Blacksmith"] = "铁"
+WoWTranslateOutGlossary["blacksmith"] = "铁"
+WoWTranslateOutGlossary["Lumber Mill"] = "木"
+WoWTranslateOutGlossary["lumber mill"] = "木"
+WoWTranslateOutGlossary["Tunnel"] = "地道"
+WoWTranslateOutGlossary["tunnel"] = "地道"
+WoWTranslateOutGlossary["Ramp"] = "斜坡"
+WoWTranslateOutGlossary["ramp"] = "斜坡"
 
 -- ============================================================================
 -- OUTGOING GLOSSARY LOOKUP FUNCTIONS

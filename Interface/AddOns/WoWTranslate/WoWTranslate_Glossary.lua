@@ -70,10 +70,8 @@ WoWTranslateGlossary["海山螺丝厂"] = "Mount Hyjal (farm)"
 -- ============================================================================
 -- DUNGEONS (50+ entries)
 -- ============================================================================
--- Scarlet Monastery
+-- Scarlet Monastery (CN players use XS, not SM; SM = Shaman pinyin)
 WoWTranslateGlossary["血色修道院"] = "Scarlet Monastery"
-WoWTranslateGlossary["SM"] = "Scarlet Monastery"
-WoWTranslateGlossary["sm"] = "Scarlet Monastery"
 WoWTranslateGlossary["血色"] = "Scarlet Monastery"
 
 -- Dire Maul
@@ -151,6 +149,8 @@ WoWTranslateGlossary["诺莫瑞根"] = "Gnomeregan"
 WoWTranslateGlossary["GNOMER"] = "Gnomeregan"
 WoWTranslateGlossary["gnomer"] = "Gnomeregan"
 WoWTranslateGlossary["侏儒城"] = "Gnomeregan"
+WoWTranslateGlossary["NM"] = "Gnomeregan"   -- CN Pinyin: 诺莫 NuòMó
+WoWTranslateGlossary["nm"] = "Gnomeregan"
 
 -- Razorfen Downs
 WoWTranslateGlossary["剃刀高地"] = "Razorfen Downs"
@@ -183,6 +183,8 @@ WoWTranslateGlossary["沉没的神庙"] = "Sunken Temple"
 WoWTranslateGlossary["塔哈克神庙"] = "Sunken Temple"
 WoWTranslateGlossary["ST"] = "Sunken Temple"
 WoWTranslateGlossary["st"] = "Sunken Temple"
+WoWTranslateGlossary["TK"] = "Sunken Temple"   -- CN Pinyin: 塔哈克 TǎHāKè
+WoWTranslateGlossary["tk"] = "Sunken Temple"
 WoWTranslateGlossary["神庙"] = "Sunken Temple"
 
 -- Ragefire Chasm
@@ -194,7 +196,6 @@ WoWTranslateGlossary["rf"] = "Ragefire Chasm"
 
 -- Stockades
 WoWTranslateGlossary["监狱"] = "Stockades"
-WoWTranslateGlossary["大监狱"] = "Stockades"
 WoWTranslateGlossary["暴风监狱"] = "Stockades"
 WoWTranslateGlossary["刷马鞭"] = "Stockades (whip farm)"
 WoWTranslateGlossary["STOCKS"] = "Stockades"
@@ -213,6 +214,7 @@ WoWTranslateGlossary["KLZ墓穴"] = "Karazhan Crypts"
 WoWTranslateGlossary["卡拉赞"] = "Karazhan"
 WoWTranslateGlossary["暴风城地下室"] = "Stormwind Vault"
 WoWTranslateGlossary["大监狱地下"] = "Stormwind Vault"
+WoWTranslateGlossary["大监狱"] = "Stormwind Vault"
 
 -- ============================================================================
 -- CN PINYIN ABBREVIATIONS FOR DUNGEONS
@@ -242,9 +244,11 @@ WoWTranslateGlossary["TDGD"] = "Razorfen Downs"
 -- Uldaman (ADM = 奥达曼 AòDáMàn)
 WoWTranslateGlossary["ADM"] = "Uldaman"
 WoWTranslateGlossary["adm"] = "Uldaman"
--- Zul'Farrak (ZR = 祖尔)
-WoWTranslateGlossary["ZR"] = "Zul'Farrak"
-WoWTranslateGlossary["zr"] = "Zul'Farrak"
+-- Zul'Farrak (ZF abbreviation; ZFLK = full pinyin form)
+WoWTranslateGlossary["ZFLK"] = "Zul'Farrak"
+-- Gnome race (ZR = 侏儒 ZhūRú; Zul'Farrak uses ZF per CN convention)
+WoWTranslateGlossary["ZR"] = "Gnome"
+WoWTranslateGlossary["zr"] = "Gnome"
 -- Maraudon (MLD = 玛拉顿 MǎLāDùn)
 WoWTranslateGlossary["MLD"] = "Maraudon"
 WoWTranslateGlossary["mld"] = "Maraudon"
@@ -272,6 +276,30 @@ WoWTranslateGlossary["卡下"] = "Karazhan (lower)"
 WoWTranslateGlossary["KLZ下"] = "Karazhan (lower)"
 WoWTranslateGlossary["卡上"] = "Karazhan (upper)"
 WoWTranslateGlossary["KLZ上"] = "Karazhan (upper)"
+-- Wailing Caverns (AH = 哀嚎 ĀiHáo)
+WoWTranslateGlossary["AH"] = "Wailing Caverns"
+WoWTranslateGlossary["ah"] = "Wailing Caverns"
+-- Blackfathom Deeps (HD = 黑暗 HēiÀn / 深渊)
+WoWTranslateGlossary["HD"] = "Blackfathom Deeps"
+WoWTranslateGlossary["hd"] = "Blackfathom Deeps"
+-- Razorfen Kraul (ZZ = 沼泽 ZhǎoZé)
+WoWTranslateGlossary["ZZ"] = "Razorfen Kraul"
+WoWTranslateGlossary["zz"] = "Razorfen Kraul"
+-- Razorfen Downs (GD = 高地 GāoDì)
+WoWTranslateGlossary["GD"] = "Razorfen Downs"
+WoWTranslateGlossary["gd"] = "Razorfen Downs"
+-- Dire Maul (EY = 厄运 ÈYùn)
+WoWTranslateGlossary["EY"] = "Dire Maul"
+WoWTranslateGlossary["ey"] = "Dire Maul"
+-- Lower Blackrock Spire (HX = 黑下 HēiXià)
+WoWTranslateGlossary["HX"] = "Lower Blackrock Spire"
+WoWTranslateGlossary["hx"] = "Lower Blackrock Spire"
+-- Upper Blackrock Spire (HS = 黑上 HēiShàng)
+WoWTranslateGlossary["HS"] = "Upper Blackrock Spire"
+WoWTranslateGlossary["hs"] = "Upper Blackrock Spire"
+-- Black Morass (SG = 时光 ShíGuāng)
+WoWTranslateGlossary["SG"] = "Black Morass"
+WoWTranslateGlossary["sg"] = "Black Morass"
 
 -- ============================================================================
 -- TURTLEWOW CUSTOM CONTENT
@@ -327,11 +355,36 @@ WoWTranslateGlossary["疯狂猫女"] = "Crazy Cat Lady (title)"
 WoWTranslateGlossary["龟龟助手"] = "Turtle helper tool"
 WoWTranslateGlossary["龟壳"] = "Turtle-Shell addon manager"
 WoWTranslateGlossary["海山跑跑团"] = "Hyjal jog farm group"
--- Races
+-- Races (Chinese names)
+WoWTranslateGlossary["矮人"] = "Dwarf"
+WoWTranslateGlossary["暗夜精灵"] = "Night Elf"
+WoWTranslateGlossary["侏儒"] = "Gnome"
+WoWTranslateGlossary["人类"] = "Human"
+WoWTranslateGlossary["兽人"] = "Orc"
+WoWTranslateGlossary["牛头人"] = "Tauren"
+WoWTranslateGlossary["巨魔"] = "Troll"
+WoWTranslateGlossary["亡灵"] = "Undead"
 WoWTranslateGlossary["高等精灵"] = "High Elf"
 WoWTranslateGlossary["高精"] = "High Elf"
 WoWTranslateGlossary["哥布林"] = "Goblin"
 WoWTranslateGlossary["地精"] = "Goblin"
+-- Race pinyin abbreviations
+WoWTranslateGlossary["AR"] = "Dwarf"       -- 矮人 ĀiRén
+WoWTranslateGlossary["ar"] = "Dwarf"
+WoWTranslateGlossary["AY"] = "Night Elf"   -- 暗夜 ÀnYè
+WoWTranslateGlossary["ay"] = "Night Elf"
+WoWTranslateGlossary["SR"] = "Orc"         -- 兽人 ShòuRén
+WoWTranslateGlossary["sr"] = "Orc"
+WoWTranslateGlossary["NTR"] = "Tauren"     -- 牛头人 NiúTóuRén
+WoWTranslateGlossary["ntr"] = "Tauren"
+WoWTranslateGlossary["JM"] = "Troll"       -- 巨魔 JùMó
+WoWTranslateGlossary["jm"] = "Troll"
+WoWTranslateGlossary["WL"] = "Undead"      -- 亡灵 WángLíng
+WoWTranslateGlossary["wl"] = "Undead"
+WoWTranslateGlossary["DJ"] = "Goblin"      -- 地精 DìJīng
+WoWTranslateGlossary["dj"] = "Goblin"
+WoWTranslateGlossary["GJ"] = "High Elf"    -- 高精 GāoJīng
+WoWTranslateGlossary["gj"] = "High Elf"
 
 -- ============================================================================
 -- GROUP FINDER SHORTHANDS (CN "have=need" format, e.g. 4=1 = 4 ready, need 1)
@@ -352,8 +405,14 @@ WoWTranslateGlossary["战士"] = "Warrior"
 WoWTranslateGlossary["ZS"] = "Warrior"
 WoWTranslateGlossary["zs"] = "Warrior"
 WoWTranslateGlossary["防战"] = "Prot Warrior"
+WoWTranslateGlossary["FZ"] = "Prot Warrior"
+WoWTranslateGlossary["fz"] = "Prot Warrior"
 WoWTranslateGlossary["狂暴战"] = "Fury Warrior"
+WoWTranslateGlossary["KBZ"] = "Fury Warrior"
+WoWTranslateGlossary["kbz"] = "Fury Warrior"
 WoWTranslateGlossary["武器战"] = "Arms Warrior"
+WoWTranslateGlossary["WQZ"] = "Arms Warrior"
+WoWTranslateGlossary["wqz"] = "Arms Warrior"
 WoWTranslateGlossary["坦克战士"] = "Tank Warrior"
 
 -- Paladin
@@ -362,7 +421,11 @@ WoWTranslateGlossary["QS"] = "Paladin"
 WoWTranslateGlossary["qs"] = "Paladin"
 WoWTranslateGlossary["骑士"] = "Paladin"
 WoWTranslateGlossary["奶骑"] = "Holy Paladin"
+WoWTranslateGlossary["NQ"] = "Holy Paladin"
+WoWTranslateGlossary["nq"] = "Holy Paladin"
 WoWTranslateGlossary["防骑"] = "Prot Paladin"
+WoWTranslateGlossary["FQ"] = "Prot Paladin"
+WoWTranslateGlossary["fq"] = "Prot Paladin"
 WoWTranslateGlossary["惩戒骑"] = "Ret Paladin"
 
 -- Hunter
@@ -387,13 +450,16 @@ WoWTranslateGlossary["牧师"] = "Priest"
 WoWTranslateGlossary["MS"] = "Priest"
 WoWTranslateGlossary["ms"] = "Priest"
 WoWTranslateGlossary["暗牧"] = "Shadow Priest"
+WoWTranslateGlossary["AM"] = "Shadow Priest"
+WoWTranslateGlossary["am"] = "Shadow Priest"
 WoWTranslateGlossary["戒律牧"] = "Disc Priest"
 WoWTranslateGlossary["神圣牧"] = "Holy Priest"
 WoWTranslateGlossary["奶牧"] = "Holy Priest"
 
--- Shaman
+-- Shaman (SM = 萨满 Sāmǎn pinyin; sm lowercase added here too)
 WoWTranslateGlossary["萨满"] = "Shaman"
 WoWTranslateGlossary["SM"] = "Shaman"
+WoWTranslateGlossary["sm"] = "Shaman"
 WoWTranslateGlossary["萨满祭司"] = "Shaman"
 WoWTranslateGlossary["奶萨"] = "Resto Shaman"
 WoWTranslateGlossary["元素萨"] = "Elemental Shaman"
@@ -421,6 +487,8 @@ WoWTranslateGlossary["XD"] = "Druid"
 WoWTranslateGlossary["xd"] = "Druid"
 WoWTranslateGlossary["小德"] = "Druid"
 WoWTranslateGlossary["奶德"] = "Resto Druid"
+WoWTranslateGlossary["ND"] = "Resto Druid"
+WoWTranslateGlossary["nd"] = "Resto Druid"
 WoWTranslateGlossary["熊德"] = "Feral Druid (Bear)"
 WoWTranslateGlossary["猫德"] = "Feral Druid (Cat)"
 WoWTranslateGlossary["鸟德"] = "Balance Druid"
@@ -896,6 +964,7 @@ WoWTranslateGlossary["嗜血"] = "Bloodlust"
 WoWTranslateGlossary["战斗复活"] = "Battle Rez"
 WoWTranslateGlossary["灵魂石"] = "Soulstone"
 WoWTranslateGlossary["治疗石"] = "Healthstone"
+WoWTranslateGlossary["糖"] = "Healthstone"
 
 -- ============================================================================
 -- COMBAT STATES & EFFECTS
@@ -945,6 +1014,7 @@ WoWTranslateGlossary["副本"] = "Dungeon/Instance"
 -- CHAT SLANG (additional entries)
 -- ============================================================================
 WoWTranslateGlossary["私聊"] = "PST"
+WoWTranslateGlossary["私我"] = "PST"
 WoWTranslateGlossary["求邀请"] = "Inv me"
 WoWTranslateGlossary["我回来了"] = "I'm back"
 WoWTranslateGlossary["得走了"] = "GTG (gotta go)"
@@ -1050,9 +1120,12 @@ WoWTranslateGlossary["肉盾"] = "Tank"
 WoWTranslateGlossary["主T"] = "Main Tank"
 WoWTranslateGlossary["副T"] = "Off-Tank"
 WoWTranslateGlossary["大奶"] = "Main Healer"
+WoWTranslateGlossary["主奶"] = "Main Healer"
 WoWTranslateGlossary["副奶"] = "Secondary Healer"
 WoWTranslateGlossary["RDPS"] = "Ranged DPS"
+WoWTranslateGlossary["远程"] = "Ranged"
 WoWTranslateGlossary["MDPS"] = "Melee DPS"
+WoWTranslateGlossary["近战"] = "Melee"
 
 -- ============================================================================
 -- PALADIN BLESSINGS
@@ -1505,6 +1578,44 @@ WoWTranslateGlossary["塔拉宾岛"]           = "Tel'Abim"
 WoWTranslateGlossary["奥丹姆"]             = "Uldum"
 WoWTranslateGlossary["贝勒岛"]             = "Balor Isle"
 WoWTranslateGlossary["北风领"]             = "Northwind"
+
+-- ============================================================================
+-- UTILITY & LFG ABBREVIATIONS
+-- ============================================================================
+-- Instance/Dungeon
+WoWTranslateGlossary["FB"] = "Dungeon"     -- 副本 FùBěn
+WoWTranslateGlossary["fb"] = "Dungeon"
+WoWTranslateGlossary["副本"] = "Dungeon"
+-- Gear
+WoWTranslateGlossary["ZB"] = "Gear"        -- 装备 ZhuāngBèi
+WoWTranslateGlossary["zb"] = "Gear"
+WoWTranslateGlossary["装备"] = "Gear"
+-- LFG
+WoWTranslateGlossary["QZ"] = "LFG"         -- 求组 QiúZǔ
+WoWTranslateGlossary["qz"] = "LFG"
+WoWTranslateGlossary["求组"] = "LFG"
+-- Mage Portal / Open the portal
+WoWTranslateGlossary["KM"] = "Mage Portal" -- 开门 KāiMén
+WoWTranslateGlossary["km"] = "Mage Portal"
+WoWTranslateGlossary["开门"] = "Mage Portal"
+-- Consumables
+WoWTranslateGlossary["YS"] = "need water"  -- 要水 YàoShuǐ
+WoWTranslateGlossary["ys"] = "need water"
+WoWTranslateGlossary["要水"] = "need water"
+WoWTranslateGlossary["YMB"] = "need bread" -- 要面包 YàoMiànBāo
+WoWTranslateGlossary["ymb"] = "need bread"
+WoWTranslateGlossary["要面包"] = "need bread"
+-- DPS shorthand
+WoWTranslateGlossary["DD"] = "DPS"
+WoWTranslateGlossary["dd"] = "DPS"
+-- Healer roles
+WoWTranslateGlossary["MN"] = "Main Healer" -- 主奶 / Main Nai
+WoWTranslateGlossary["mn"] = "Main Healer"
+WoWTranslateGlossary["FN"] = "Off Healer"  -- 副奶 / Fù Nai
+WoWTranslateGlossary["fn"] = "Off Healer"
+-- Battleground callouts
+WoWTranslateGlossary["地道"] = "Tunnel"    -- WSG
+WoWTranslateGlossary["斜坡"] = "Ramp"      -- WSG
 
 -- ============================================================================
 -- WoW EXPANSION TERMS
