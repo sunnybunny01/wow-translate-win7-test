@@ -19,6 +19,10 @@
 
 ---
 
+## Announcement:
+
+Since an unexpected amount of people were asking me for a way to donate, if you want to support the development of this passion project, either Paypal me at @paokkerkir or Revolut me at @belthazor.
+
 ## ✨ Features
 
 | Feature | Description |
