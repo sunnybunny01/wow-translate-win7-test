@@ -37,6 +37,8 @@ Since an unexpected amount of people were asking me for a way to donate, if you 
 | 📺 **Channel Filtering** | Choose exactly which channels get translated |
 | 💤 **AFK Auto-Pause function** | Pausing translation while you're AFK |
 
+Fully compatible with [WoW-CNLocale](https://github.com/paokkerkir/WoW-CNLocale).
+
 ---
 
 ## 🚀 Quick Start
