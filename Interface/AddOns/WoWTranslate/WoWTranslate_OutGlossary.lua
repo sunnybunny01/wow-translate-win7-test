@@ -645,6 +645,8 @@ WoWTranslateOutGlossary["queue"] = "排队"
 WoWTranslateOutGlossary["Queue"] = "排队"
 WoWTranslateOutGlossary["whisper me"] = "密我"
 WoWTranslateOutGlossary["Whisper me"] = "密我"
+WoWTranslateOutGlossary["whisper me to join"] = "来的密"
+WoWTranslateOutGlossary["Whisper me to join"] = "来的密"
 WoWTranslateOutGlossary["leave raid"] = "退团"
 WoWTranslateOutGlossary["Leave raid"] = "退团"
 WoWTranslateOutGlossary["convert to raid"] = "转团"
@@ -796,6 +798,30 @@ WoWTranslateOutGlossary["Tunnel"] = "地道"
 WoWTranslateOutGlossary["tunnel"] = "地道"
 WoWTranslateOutGlossary["Ramp"] = "斜坡"
 WoWTranslateOutGlossary["ramp"] = "斜坡"
+
+-- ============================================================================
+-- EVENTS & HOLIDAYS
+-- ============================================================================
+WoWTranslateOutGlossary["Darkmoon Faire"]   = "暗月马戏团"
+WoWTranslateOutGlossary["darkmoon faire"]   = "暗月马戏团"
+WoWTranslateOutGlossary["Dark Moon Faire"]  = "暗月马戏团"
+WoWTranslateOutGlossary["dark moon faire"]  = "暗月马戏团"
+WoWTranslateOutGlossary["DMF"]              = "暗月马戏团"
+WoWTranslateOutGlossary["dmf"]              = "暗月马戏团"
+
+-- ============================================================================
+-- SUMMON / STONE CALLOUTS (outgoing)
+-- ============================================================================
+WoWTranslateOutGlossary["Can summon"]       = "可拉"
+WoWTranslateOutGlossary["can summon"]       = "可拉"
+WoWTranslateOutGlossary["Click stone"]      = "来石头的来"
+WoWTranslateOutGlossary["click stone"]      = "来石头的来"
+WoWTranslateOutGlossary["At the gate"]      = "到门口"
+WoWTranslateOutGlossary["at the gate"]      = "到门口"
+WoWTranslateOutGlossary["Inv pls"]          = "进组来"
+WoWTranslateOutGlossary["inv pls"]          = "进组来"
+WoWTranslateOutGlossary["Ready?"]           = "来不来？"
+WoWTranslateOutGlossary["ready?"]           = "来不来？"
 
 -- ============================================================================
 -- OUTGOING GLOSSARY LOOKUP FUNCTIONS

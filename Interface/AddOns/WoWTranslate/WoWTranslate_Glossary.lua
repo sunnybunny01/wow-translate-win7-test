@@ -823,10 +823,12 @@ WoWTranslateGlossary["什么时候"] = "When?"
 WoWTranslateGlossary["几点"] = "What time?"
 
 -- Trading
-WoWTranslateGlossary["收"] = "WTB"
+-- NOTE: bare 收 removed — fires inside 收拾/收集/收回 etc. (same issue as 出).
+-- 收了/收到/收人 already have their own longer entries above; API handles bare 收 in context.
 WoWTranslateGlossary["卖"] = "WTS"
 WoWTranslateGlossary["买"] = "Buying"
-WoWTranslateGlossary["出"] = "Selling"
+-- NOTE: bare 出 removed — it matched combat phrases like 出来/拉出来 as "Selling".
+-- 出售 = "WTS (Selling)" (below) covers explicit trading usage; API handles bare 出 in context.
 WoWTranslateGlossary["便宜"] = "Cheap"
 WoWTranslateGlossary["贵"] = "Expensive"
 WoWTranslateGlossary["金"] = "Gold"
@@ -1087,7 +1089,6 @@ WoWTranslateGlossary["起来"] = "get up"
 WoWTranslateGlossary["曝光毛人"] = "expose the ninja looter"
 WoWTranslateGlossary["毛团"] = "ninja raid"
 WoWTranslateGlossary["毛人"] = "ninja looter"
-WoWTranslateGlossary["毛"] = "ninja"
 
 -- ============================================================================
 -- BOSSES (ADDITIONAL ALIASES)
@@ -1519,6 +1520,7 @@ WoWTranslateGlossary["插旗"]               = "PvP flag on"
 WoWTranslateGlossary["BL"]                 = "Horde"
 WoWTranslateGlossary["密我"]               = "whisper me"
 WoWTranslateGlossary["密一下"]             = "whisper me"
+WoWTranslateGlossary["来的密"]             = "whisper me to join"
 WoWTranslateGlossary["公聊"]               = "say channel"
 WoWTranslateGlossary["转团"]               = "convert to raid"
 WoWTranslateGlossary["退团"]               = "leave raid"
@@ -1633,6 +1635,52 @@ WoWTranslateGlossary["地心之战"]           = "The War Within"
 WoWTranslateGlossary["怀旧服"]             = "Classic / Vanilla server"
 WoWTranslateGlossary["正式服"]             = "retail / live server"
 WoWTranslateGlossary["时光服"]             = "Season of Discovery"
+
+-- ============================================================================
+-- WHISPER SHORTHANDS (密 = whisper in CN WoW slang)
+-- ============================================================================
+-- Compound forms (longer keys win; bare 密 only fires where none of the
+-- longer compound keys claimed the position)
+WoWTranslateGlossary["密密密密密密"]  = "Whisper"
+WoWTranslateGlossary["密密密密密"]   = "Whisper"
+WoWTranslateGlossary["密密密密"]   = "Whisper"
+WoWTranslateGlossary["密密密"]     = "Whisper"
+WoWTranslateGlossary["密密"]       = "Whisper"
+WoWTranslateGlossary["MMMMMMMMMM"]  = "Whisper"
+WoWTranslateGlossary["MMMMMMMMM"]  = "Whisper"
+WoWTranslateGlossary["MMMMMMMM"]  = "Whisper"
+WoWTranslateGlossary["MMMMMMM"]  = "Whisper"
+WoWTranslateGlossary["MMMMMM"]  = "Whisper"
+WoWTranslateGlossary["MMMMM"]   = "Whisper"
+WoWTranslateGlossary["MMMM"]   = "Whisper"
+WoWTranslateGlossary["MMM"]     = "Whisper"
+WoWTranslateGlossary["MM"]       = "Whisper"
+WoWTranslateGlossary["直接密"]     = "Whisper me"
+WoWTranslateGlossary["求密"]       = "Whisper me"
+WoWTranslateGlossary["来密"]       = "Whisper me"
+-- 密我/密一下/来的密 already defined in COMMUNITY/SOCIAL section above.
+-- NOTE: bare 密 NOT added here — fires inside 密码/保密/亲密 etc. (same issue as bare 出/收).
+-- Standalone "密" messages and "密 [PlayerName]" require sentence-level context;
+-- the API translates these correctly. All unambiguous compound forms are above.
+
+-- ============================================================================
+-- NEED / GROUP-JOIN / SUMMON PHRASES
+-- ============================================================================
+WoWTranslateGlossary["可拉"]         = "Can summon"
+WoWTranslateGlossary["来不来"]       = "Ready?"
+WoWTranslateGlossary["进组来"]       = "Inv pls"
+WoWTranslateGlossary["来拉人"]       = "Click (summon stone)"
+WoWTranslateGlossary["来石头的来"]   = "Click summon stone"
+WoWTranslateGlossary["到门口的来"]   = "At the gate (click stone)"
+WoWTranslateGlossary["到门口"]       = "At the gate"
+WoWTranslateGlossary["来人"]         = "Need"
+WoWTranslateGlossary["来个"]         = "Need"
+
+-- ============================================================================
+-- EVENTS & HOLIDAYS
+-- ============================================================================
+WoWTranslateGlossary["暗月马戏团"]   = "Darkmoon Faire"
+WoWTranslateGlossary["暗月"]         = "Darkmoon"
 
 -- ============================================================================
 -- GLOSSARY LOOKUP FUNCTIONS

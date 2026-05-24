@@ -245,6 +245,10 @@ local function PollTranslations()
                         -- Successful response: reset everything.
                         consecutiveApiErrors = 0
                         rateLimitBackoff     = 15
+                        -- Google Translate sometimes inserts a space after an apostrophe
+                        -- when translating from languages that have no contractions (e.g. Chinese),
+                        -- producing "doesn' t" or "won'  t".  Strip the extra space(s).
+                        translation = string.gsub(translation, "'%s+(%a)", "'%1")
                         _cbOk, _cbErr = pcall(req.callback, translation, nil)
                     end
                     if not _cbOk then

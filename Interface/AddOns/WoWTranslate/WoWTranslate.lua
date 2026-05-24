@@ -37,6 +37,10 @@ local originalSendChatMessage = SendChatMessage
 -- Waiters for in-flight player/guild name translations (rawName -> { callbacks = {} })
 local pendingNameTranslations = {}
 
+-- Forward reference: assigned after HookNameplates is defined so
+-- WoWTranslate_SetTranslateNameplates can start the scanner mid-session.
+local wtNameplateScanStart = nil
+
 -- Pre-translated prefixes for outgoing messages (zero API cost)
 local TRANSLATED_PREFIXES = {
     zh = "[由WoWTranslate翻译]",
@@ -133,12 +137,16 @@ local defaults = {
     translationColor = "",       -- Hex RRGGBB for translated text body; empty = default chat color
     translationColorFollow = false,  -- If true, body color follows the source channel color
     replaceMode = false,         -- [EXPERIMENTAL] Replace original message with translation instead of appending
+    translateGroupFinder = false, -- [EXPERIMENTAL] Translate LFT group finder titles/descriptions
     -- Name/guild translation
     translatePlayerNames = false,
     translateGuildNames = false,
     translateNameplates = false,
     outgoingButtonPos = { x = 100, y = 100 },
     showOutgoingButton = true,
+    playerNameClassColor = true,
+    nameplateGuildOOC = false,
+    nameplateHideHealthOOC = false,
 }
 
 -- ============================================================================
@@ -324,6 +332,20 @@ local function PreprocessIncoming(text)
     text = string.gsub(text, "([^%w])11$",        "%1yes")
     text = string.gsub(text, "^11([^%w])",         "yes%1")
     text = string.gsub(text, "^11$",               "yes")
+    -- 密 (mì, U+5BC6, UTF-8 \229\175\134) = "whisper" in CN WoW slang.
+    -- Two context-specific cases that the static glossary cannot cover safely:
+    -- compound forms (密我/来密/求密/密密/etc.) are handled by the glossary.
+    -- Case 1: entire message is just 密 (optionally with trailing punctuation).
+    -- Anchoring to ^ and $ ensures this never fires inside 密码/保密/亲密.
+    if string.find(text, "^\229\175\134[%. !?]*$") then
+        return "whisper"
+    end
+    -- Case 2: 密 immediately followed by an ASCII player name (e.g. "密 Playerone").
+    -- Player names on vanilla servers are ASCII-only [A-Z][a-z]+.
+    local _s, _e, pname = string.find(text, "^\229\175\134%s*([%a][%a%d]+)$")
+    if pname then
+        return "whisper " .. pname
+    end
     return text
 end
 
@@ -334,12 +356,10 @@ local function PreprocessOutgoing(text)
     -- Gold: Xg → XG
     text = string.gsub(text, "(%d+)g([^%a])", "%1G%2")
     text = string.gsub(text, "(%d+)g$",        "%1G")
-    -- Silver: Xs → XY only when the message also contains a gold amount.
-    -- Without this guard "3s CD" or "8s cast time" would wrongly become "3Y CD".
-    if string.find(text, "%d+[gG]") then
-        text = string.gsub(text, "(%d+)s([^%a])", "%1Y%2")
-        text = string.gsub(text, "(%d+)s$",        "%1Y")
-    end
+    -- Silver: Xs → XY
+    -- With this, "3s CD" or "8s cast time" could wrongly become "3Y CD" but it is a good tradeoff since these are not used often in chat.
+    text = string.gsub(text, "(%d+)s([^%a])", "%1Y%2")
+    text = string.gsub(text, "(%d+)s$",        "%1Y")
     return text
 end
 
@@ -1186,33 +1206,99 @@ local function ResolvePlayerDisplayName(rawName, callback)
     end
 end
 
-local function ResolveGuildDisplayName(rawName, callback)
+-- callback(guildDisplay, rankDisplay, rawGuild):
+--   guildDisplay = translated guild name, nil if not translatable
+--   rankDisplay  = translated rank name,  nil if not translatable
+--   rawGuild     = raw guild name always (so caller can show it alongside a translated rank)
+-- tooltipGuildText: the guild name read directly from the <GuildName> tooltip line,
+--   used to detect servers that return GetGuildInfo as (rank, guild) instead of (guild, rank).
+local function ResolveGuildDisplayName(rawName, tooltipGuildText, callback)
     if not WoWTranslateDB or not WoWTranslateDB.translateGuildNames then
-        callback(nil)
+        callback(nil, nil, nil)
         return
     end
     local unit = FindPlayerUnitByName(rawName)
-    if not unit then callback(nil); return end
-    local guildName = GetGuildInfo(unit)
-    if not guildName or guildName == "" then callback(nil); return end
+    if not unit then callback(nil, nil, nil); return end
+    local ret1, ret2 = GetGuildInfo(unit)
+    if not ret1 or ret1 == "" then callback(nil, nil, nil); return end
+
+    -- Detect and correct servers where GetGuildInfo returns (rankName, guildName) instead of
+    -- the standard (guildName, rankName).  The tooltip <GuildName> line is authoritative.
+    local guildName, guildRankName = ret1, ret2 or ""
+    if tooltipGuildText and tooltipGuildText ~= "" and ret2 and ret2 ~= "" then
+        if ret2 == tooltipGuildText and ret1 ~= tooltipGuildText then
+            guildName, guildRankName = ret2, ret1
+        end
+    end
 
     local function hasTranslatable(s)
-        return ContainsLanguageChars(s,"zh") or ContainsLanguageChars(s,"ja")
-            or ContainsLanguageChars(s,"ko") or ContainsLanguageChars(s,"ru")
+        return s and (ContainsLanguageChars(s,"zh") or ContainsLanguageChars(s,"ja")
+            or ContainsLanguageChars(s,"ko") or ContainsLanguageChars(s,"ru"))
     end
-    if not hasTranslatable(guildName) then callback(nil); return end
+
+    -- guildName is always passed as rawGuild so callers can show it untranslated when needed.
+    local function resolveRank(guildDisplay)
+        if not hasTranslatable(guildRankName) then callback(guildDisplay, nil, guildName); return end
+        local rankCacheKey = NameCacheKey("rank:" .. guildRankName)
+        local rankCached, rankFound = WoWTranslate_CacheGet(rankCacheKey)
+        if rankFound then callback(guildDisplay, rankCached, guildName); return end
+        if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+            callback(guildDisplay, nil, guildName); return
+        end
+        local rLang = DetectSourceLanguage(guildRankName)
+        if not rLang then callback(guildDisplay, nil, guildName); return end
+        local ok = WoWTranslate_API.Translate(guildRankName, function(translation, err)
+            if translation and translation ~= "" then
+                WoWTranslate_CacheSave(rankCacheKey, translation)
+                callback(guildDisplay, translation, guildName)
+            else
+                callback(guildDisplay, nil, guildName)
+            end
+        end, rLang)
+        if not ok then callback(guildDisplay, nil, guildName) end
+    end
+
+    if not hasTranslatable(guildName) then resolveRank(nil); return end
 
     local cacheKey = NameCacheKey("guild:" .. guildName)
     local cached, found = WoWTranslate_CacheGet(cacheKey)
-    if found then callback(cached); return end
+    if found then resolveRank(cached); return end
 
+    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+        callback(nil, nil, guildName); return
+    end
+    local gLang = DetectSourceLanguage(guildName)
+    if not gLang then resolveRank(nil); return end
+
+    local ok = WoWTranslate_API.Translate(guildName, function(translation, err)
+        if translation and translation ~= "" then
+            WoWTranslate_CacheSave(cacheKey, translation)
+            resolveRank(translation)
+        else
+            resolveRank(nil)
+        end
+    end, gLang)
+    if not ok then callback(nil, nil, guildName) end
+end
+
+-- Global entry point for guild-name-only translation (used by OOC nameplate guild display).
+-- callback(displayGuild) — displayGuild is nil when not translatable or queue full.
+function WoWTranslate_ResolveGuildDisplayName(rawGuild, callback)
+    if not rawGuild or rawGuild == "" then callback(nil); return end
+    local function hasTranslatable(s)
+        return s and (ContainsLanguageChars(s,"zh") or ContainsLanguageChars(s,"ja")
+            or ContainsLanguageChars(s,"ko") or ContainsLanguageChars(s,"ru"))
+    end
+    if not hasTranslatable(rawGuild) then callback(nil); return end
+    local cacheKey = NameCacheKey("guild:" .. rawGuild)
+    local cached, found = WoWTranslate_CacheGet(cacheKey)
+    if found then callback(cached); return end
     if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
         callback(nil); return
     end
-    local gLang = DetectSourceLanguage(guildName)
+    local gLang = DetectSourceLanguage(rawGuild)
     if not gLang then callback(nil); return end
-
-    WoWTranslate_API.Translate(guildName, function(translation, err)
+    local ok = WoWTranslate_API.Translate(rawGuild, function(translation, err)
         if translation and translation ~= "" then
             WoWTranslate_CacheSave(cacheKey, translation)
             callback(translation)
@@ -1220,10 +1306,12 @@ local function ResolveGuildDisplayName(rawName, callback)
             callback(nil)
         end
     end, gLang)
+    if not ok then callback(nil) end
 end
 
 function WoWTranslate_SetTranslateNameplates(val)
     if WoWTranslateDB then WoWTranslateDB.translateNameplates = val end
+    if val and wtNameplateScanStart then wtNameplateScanStart() end
 end
 
 function WoWTranslate_SetTranslatePlayerNames(val)
@@ -1500,13 +1588,17 @@ local function UpdateTooltipPlayerNames(tooltip)
     if not tooltip then return end
     if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
     if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
-    if not WoWTranslateDB.translatePlayerNames then return end
+    local doName  = WoWTranslateDB.translatePlayerNames
+    local doGuild = WoWTranslateDB.translateGuildNames
+    if not doName and not doGuild then return end
     if not TooltipIsShown(tooltip) then return end
     if tooltip.wtAddedNameLine then return end
 
     local rawName = ResolveTooltipPlayerName(tooltip)
     if not rawName or rawName == "" then return end
-    if not ShouldTranslatePlayerName(rawName) then return end
+    -- Allow English-named players through when guild translation is enabled;
+    -- ResolveGuildDisplayName will decide whether their guild/rank needs translation.
+    if not ShouldTranslatePlayerName(rawName) and not doGuild then return end
 
     if tooltip.wtNameResolvePending == rawName then return end
     tooltip.wtNameResolvePending = rawName
@@ -1517,17 +1609,88 @@ local function UpdateTooltipPlayerNames(tooltip)
         if tooltip.wtPlayerName ~= rawName then return end
         if tooltip.wtAddedNameLine then return end
 
-        ResolveGuildDisplayName(rawName, function(guildDisplay)
+        -- Synchronously read the tooltip guild line before any async call:
+        -- captures guild color for display and the authoritative guild text
+        -- for swap-detection inside ResolveGuildDisplayName.
+        local guildR, guildG, guildB
+        local tooltipGuildText = ""
+        local tipName = tooltip:GetName()
+        if tipName then
+            local numLines = (tooltip.NumLines and tooltip:NumLines()) or 0
+            for i = 2, numLines do
+                local left = getglobal(tipName .. "TextLeft" .. i)
+                if left then
+                    local t = left:GetText() or ""
+                    if string.find(t, "^<") then
+                        guildR, guildG, guildB = left:GetTextColor()
+                        tooltipGuildText = string.sub(t, 2, string.len(t) - 1)
+                        break
+                    end
+                end
+            end
+        end
+
+        ResolveGuildDisplayName(rawName, tooltipGuildText, function(guildDisplay, rankDisplay, rawGuild)
             if not TooltipIsShown(tooltip) then return end
             if tooltip.wtAddedNameLine then return end
 
             local lines = {}
             local marked = MarkTranslatedDisplayName(rawName, displayName, tooltip.wtUnit)
+
+            local hasGuild = guildDisplay and guildDisplay ~= ""
+            local hasRank  = rankDisplay  and rankDisplay  ~= ""
+            -- Show raw guild (no *) alongside a translated rank when the guild itself
+            -- needs no translation.
+            local showRawGuild = (not hasGuild) and hasRank and rawGuild and rawGuild ~= ""
+
             if marked and marked ~= rawName then
                 table.insert(lines, marked)
+            elseif (hasGuild or hasRank) and rawName and rawName ~= "" then
+                -- English name: passthrough with class color so it appears above guild/rank
+                local class = ResolvePlayerClass(rawName, tooltip.wtUnit)
+                local nameOut = rawName
+                if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
+                    nameOut = RgbHex(RAID_CLASS_COLORS[class]) .. rawName .. "|r"
+                end
+                table.insert(lines, nameOut)
             end
-            if guildDisplay and guildDisplay ~= "" then
-                table.insert(lines, "<" .. guildDisplay .. "*>")
+
+            if hasGuild or hasRank then
+                local gColor = guildR and RgbHex(guildR, guildG, guildB) or ""
+                local rColor = "|cFFAAAAAA"  -- light grey matching OG rank appearance
+
+                local guildLine = ""
+                if hasGuild then
+                    -- Echo check: Google Translate sometimes returns source text unchanged
+                    local guildTranslated = rawGuild and (guildDisplay ~= rawGuild)
+                    if guildTranslated then
+                        if gColor ~= "" then
+                            guildLine = gColor .. "<" .. guildDisplay .. "|r" .. TRANSLATED_NAME_MARK .. gColor .. ">|r"
+                        else
+                            guildLine = "<" .. guildDisplay .. TRANSLATED_NAME_MARK .. ">"
+                        end
+                    else
+                        -- Translation echoed source (or rawGuild unknown): show without mark
+                        if gColor ~= "" then
+                            guildLine = gColor .. "<" .. guildDisplay .. ">|r"
+                        else
+                            guildLine = "<" .. guildDisplay .. ">"
+                        end
+                    end
+                elseif showRawGuild then
+                    -- Untranslated guild shown for context beside a translated rank; no *
+                    if gColor ~= "" then
+                        guildLine = gColor .. "<" .. rawGuild .. ">|r"
+                    else
+                        guildLine = "<" .. rawGuild .. ">"
+                    end
+                end
+                if hasRank then
+                    -- (Name[yellow*]) in rank grey; space only when guild part is present
+                    local sep = (guildLine ~= "") and " " or ""
+                    guildLine = guildLine .. sep .. rColor .. "(" .. rankDisplay .. "|r" .. TRANSLATED_NAME_MARK .. rColor .. ")|r"
+                end
+                table.insert(lines, guildLine)
             end
             if table.getn(lines) > 0 then
                 InsertTooltipLines(tooltip, lines)
@@ -1541,7 +1704,7 @@ end
 -- NAMEPLATE PLAYER NAME TRANSLATION
 -- ============================================================================
 -- Works with ShaguPlates (ShaguTweaks.libnameplate + ShaguPlates.nameplates).
--- Vanilla nameplate scan is also attempted as a fallback.
+-- Vanilla 3D-engine nameplate names cannot be intercepted; ShaguPlates is required.
 -- All behavior is gated on WoWTranslateDB.translateNameplates.
 
 local function PlayerNameClassColorEnabled()
@@ -1582,19 +1745,108 @@ local function OverheadDisplayMatchesRawName(text, rawName)
     return StripOverheadDisplaySuffix(text) == rawName
 end
 
--- Stubs: only used when playerNameClassColor is enabled (not exposed in UI).
+-- Class from ShaguTweaks player scan (no unit id probes).
+local function GetPlayerClassFromName(rawName)
+    if not rawName or rawName == "" then return nil end
+    if ShaguTweaks and ShaguTweaks.GetUnitData then
+        local class = ShaguTweaks.GetUnitData(rawName)
+        if class and class ~= "UNKNOWN" and class ~= UNKNOWN then return class end
+    end
+    return nil
+end
+
+-- Same color thresholds as ShaguPlates GetUnitType (reads original.healthbar).
+local function GetShaguBarUnitType(r, g, b)
+    if not r then return "ENEMY_NPC" end
+    if r > .9 and g < .2 and b < .2 then return "ENEMY_NPC" end
+    if r > .9 and g > .9 and b < .2 then return "NEUTRAL_NPC" end
+    if r < .2 and g < .2 and b > .9 then return "FRIENDLY_PLAYER" end
+    if r < .2 and g > .9 and b < .2 then return "FRIENDLY_NPC" end
+    return "ENEMY_NPC"
+end
+
+-- Forward declarations; bodies follow after GetNameplateOverlay.
 local GetNameplateFactionRgb
 local GetNameplateNameTextRgb
-GetNameplateFactionRgb  = function(plate) return 1, 0, 0 end
-GetNameplateNameTextRgb = function(rawName, plate) return nil end
+local IsNameplatePlayerForColor
 
-local function ColorizeNameplateDisplayText(rawName, text, plate)
-    if not text or text == "" then return text end
-    if not PlayerNameClassColorEnabled() then return StripColorCodes(text) end
-    local plain = ApplyNameCapitalization(StripColorCodes(text))
-    local r, g, b = GetNameplateNameTextRgb(rawName, plate)
-    if r then return RgbHex(r, g, b) .. plain .. "|r" end
-    return plain
+local function GetNameplateOverlay(parent)
+    if not parent then return nil end
+    local overlay = parent.nameplate
+    if overlay and overlay.name and overlay.name.GetText and overlay.name.SetText then
+        return overlay
+    end
+end
+
+local function GetNameplateHealthbar(parent)
+    if not parent then return nil end
+    local overlay = GetNameplateOverlay(parent)
+    if overlay and overlay.health and overlay.health.Hide then return overlay.health end
+    if parent.wtHealthbar then return parent.wtHealthbar end
+    if parent.GetChildren then
+        local child = parent:GetChildren()
+        if child then parent.wtHealthbar = child; return child end
+    end
+end
+
+-- Hostility tint from the nameplate health bar (ShaguPlates original.healthbar).
+GetNameplateFactionRgb = function(plate)
+    local overlay = GetNameplateOverlay(plate)
+    local bar
+    if overlay and overlay.original and overlay.original.healthbar
+            and overlay.original.healthbar.GetStatusBarColor then
+        bar = overlay.original.healthbar
+    else
+        bar = GetNameplateHealthbar(plate)
+    end
+    if not bar or not bar.GetStatusBarColor then return 1, 0, 0 end
+    local r, g, b = bar:GetStatusBarColor()
+    if not r then return 1, 0, 0 end
+    local ut = GetShaguBarUnitType(r, g, b)
+    if ut == "NEUTRAL_NPC" then return 1, 1, 0 end
+    if ut == "FRIENDLY_NPC" then return 0, 1, 0 end
+    return 1, 0, 0
+end
+
+-- True when nameplate belongs to a player character (not NPC).
+IsNameplatePlayerForColor = function(plate, rawName)
+    local overlay = GetNameplateOverlay(plate)
+    if not overlay then return false end
+    if overlay.cache and overlay.cache.player == "NPC" then return false end
+    if overlay.cache and overlay.cache.player == "PLAYER" then return true end
+    local bar = overlay.original and overlay.original.healthbar
+    if not bar or not bar.GetStatusBarColor then return false end
+    local r, g, b = bar:GetStatusBarColor()
+    local ut = GetShaguBarUnitType(r, g, b)
+    if ut == "FRIENDLY_NPC" or ut == "NEUTRAL_NPC" then return false end
+    if ut == "FRIENDLY_PLAYER" then return true end
+    if rawName and rawName ~= "" then
+        if ShaguPlates_playerDB and ShaguPlates_playerDB[rawName] then return true end
+        if GetPlayerClassFromName(rawName) then return true end
+    end
+    return false
+end
+
+-- Class color for players, faction tint for NPCs; nil = let ShaguPlates color stand.
+GetNameplateNameTextRgb = function(rawName, plate)
+    if not plate or not PlayerNameClassColorEnabled() then return nil end
+    if not IsNameplatePlayerForColor(plate, rawName) then
+        return GetNameplateFactionRgb(plate)
+    end
+    local overlay = GetNameplateOverlay(plate)
+    if overlay and overlay.original and overlay.original.name
+            and overlay.original.name.GetTextColor then
+        local br, bg, bb = overlay.original.name:GetTextColor()
+        if br and br > .9 and bg and bg < .35 and bb and bb < .35 then
+            return br, bg, bb
+        end
+    end
+    local class = GetPlayerClassFromName(rawName)
+    if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
+        local c = RAID_CLASS_COLORS[class]
+        return c.r, c.g, c.b
+    end
+    return nil
 end
 
 local function FormatNameplateOverlayText(rawName, displayName)
@@ -1603,15 +1855,6 @@ local function FormatNameplateOverlayText(rawName, displayName)
     local plain = ApplyNameCapitalization(StripColorCodes(isTranslated and displayName or rawName))
     if not isTranslated then return plain end
     return plain .. "*"
-end
-
-local function FormatNameplateVanillaText(rawName, displayName, plate)
-    displayName = displayName or rawName
-    if not rawName or displayName == rawName then
-        return ColorizeNameplateDisplayText(rawName, rawName, plate)
-    end
-    local colored = ColorizeNameplateDisplayText(rawName, displayName, plate)
-    return colored .. TRANSLATED_NAME_MARK
 end
 
 local function ApplyNameplateNameText(fs, formatted, parent, rawName, unit)
@@ -1641,12 +1884,8 @@ local function ApplyNameplateNameText(fs, formatted, parent, rawName, unit)
     end
 end
 
-local NAMEPLATE_OBJECTORDER = { "border", "glow", "name", "level", "levelicon", "raidicon" }
 local wtNameplateShaguHooked = false
 local wtShaguPlatesHooked    = false
-local wtNameplateRegistry    = {}
-local wtNameplateScanFrame   = nil
-local wtNameplateScanInitialized = 0
 local NAMEPLATE_NAME_UPDATE_INTERVAL = 0.2
 
 local function NameplateNameUpdateDue(plate)
@@ -1657,309 +1896,304 @@ local function NameplateNameUpdateDue(plate)
     return true
 end
 
-local function NameplateFrameVisible(plate)
-    if not plate then return false end
-    if plate.IsVisible then
-        local v = plate:IsVisible()
-        if v and v ~= 0 then return true end
-    end
-    if plate.IsShown then
-        local s = plate:IsShown()
-        if s and s ~= 0 then return true end
-    end
-    return false
-end
-
-local function PruneNameplateRegistry()
-    for plate in pairs(wtNameplateRegistry) do
-        if not NameplateFrameVisible(plate) then
-            wtNameplateRegistry[plate] = nil
-        end
-    end
-end
-
-local function IsNamePlateFrame(frame)
-    if not frame or not frame.GetObjectType then return false end
-    local otype = frame:GetObjectType()
-    if otype ~= "Button" and otype ~= "Frame" then return false end
-    local regions = frame:GetRegions()
-    if regions and regions.GetObjectType and regions.GetTexture then
-        if regions:GetObjectType() == "Texture"
-                and regions:GetTexture() == "Interface\\Tooltips\\Nameplate-Border" then
-            return true
-        end
-    end
-    if frame.GetChildren then
-        local child = frame:GetChildren()
-        if child and frame.GetRegions then
-            for i, object in pairs({ frame:GetRegions() }) do
-                if object and object.GetObjectType
-                        and object:GetObjectType() == "FontString" then
-                    local t = object:GetText()
-                    if t and t ~= "" and not string.find(t, "^Level ") then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function AssignNameplateRegions(plate)
-    for i, object in pairs({ plate:GetRegions() }) do
-        if NAMEPLATE_OBJECTORDER[i] then plate[NAMEPLATE_OBJECTORDER[i]] = object end
-    end
-end
-
-local function GetNameplateOverlay(parent)
-    if not parent then return nil end
-    local overlay = parent.nameplate
-    if overlay and overlay.name and overlay.name.GetText and overlay.name.SetText then
-        return overlay
-    end
-end
-
-local function EnsureVanillaTranslateNameFont(plate)
-    if not plate or GetNameplateOverlay(plate) then return nil end
-    if plate.wtTranslateName and plate.wtTranslateName.GetText then
-        return plate.wtTranslateName
-    end
-    AssignNameplateRegions(plate)
-    local src = plate.name
-    if not src or not src.GetText then return nil end
-    local fs = plate:CreateFontString("WoWTranslateNameplateName", "OVERLAY")
-    if src.GetFont and fs.SetFont then
-        local font, size, flags = src:GetFont()
-        if font then fs:SetFont(font, size or 12, flags) end
-    end
-    if src.GetJustifyH and fs.SetJustifyH then fs:SetJustifyH(src:GetJustifyH()) end
-    if src.GetJustifyV and fs.SetJustifyV then fs:SetJustifyV(src:GetJustifyV()) end
-    local point, relTo, relPoint, xOfs, yOfs = src:GetPoint()
-    if point then
-        fs:SetPoint(point, relTo or plate, relPoint or point, xOfs or 0, yOfs or 0)
-    else
-        fs:SetPoint("BOTTOM", plate, "TOP", 0, 0)
-    end
-    plate.wtTranslateName = fs
-    if src.SetAlpha then src:SetAlpha(0) end
-    fs:Show()
-    return fs
-end
-
-local function SyncVanillaNameplateSourceText(plate, rawName)
-    if not plate or not rawName or rawName == "" or GetNameplateOverlay(plate) then return end
-    AssignNameplateRegions(plate)
-    local src = plate.name
-    if not src or not src.SetText then return end
-    if src:GetText() ~= rawName then src:SetText(rawName) end
-    if src.SetAlpha then src:SetAlpha(0) end
-end
-
 local function GetNameplateDisplayNameFont(parent)
     local overlay = GetNameplateOverlay(parent)
     if overlay then return overlay.name end
-    local vanillaFs = EnsureVanillaTranslateNameFont(parent)
-    if vanillaFs then return vanillaFs end
-    AssignNameplateRegions(parent)
-    if parent.name and parent.name.GetText then
-        local t = parent.name:GetText()
-        if t and t ~= "" then return parent.name end
-    end
-    for i, object in pairs({ parent:GetRegions() }) do
-        if NAMEPLATE_OBJECTORDER[i] == "name" and object and object.GetText then
-            return object
-        end
-    end
-    for i, object in pairs({ parent:GetRegions() }) do
-        if object and object.GetObjectType
-                and object:GetObjectType() == "FontString" then
-            local t = object:GetText()
-            if t and t ~= "" and not string.find(t, "^Level ") then return object end
-        end
-    end
-end
-
-local function CaptureVanillaNameplateSource(plate)
-    if not plate then return nil end
-    if plate.wtSourceName and plate.wtSourceName ~= "" then return plate.wtSourceName end
-    AssignNameplateRegions(plate)
-    local fs = plate.name
-    if not fs or not fs.GetText then fs = GetNameplateDisplayNameFont(plate) end
-    if fs and fs.GetText then
-        local t = fs:GetText()
-        if t and t ~= "" then
-            if plate.wtLastDisplay and t == plate.wtLastDisplay then return plate.wtSourceName end
-            local plain = NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
-            if plain and plain ~= "" then
-                plate.wtSourceName = plain
-                return plain
-            end
-        end
-    end
     return nil
 end
 
 local function ResolveNameplateRawName(plate)
     if not plate then return nil end
     local overlay = GetNameplateOverlay(plate)
-    if overlay then
-        if overlay.cache and overlay.cache.name and overlay.cache.name ~= "" then
-            return NormalizeTruncatedNameplateName(overlay.cache.name)
-        end
-        if overlay.original and overlay.original.name and overlay.original.name.GetText then
-            local t = overlay.original.name:GetText()
-            if t and t ~= "" then
-                return NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
-            end
+    if not overlay then return plate.wtRawName end
+    if overlay.cache and overlay.cache.name and overlay.cache.name ~= "" then
+        return NormalizeTruncatedNameplateName(overlay.cache.name)
+    end
+    if overlay.original and overlay.original.name and overlay.original.name.GetText then
+        local t = overlay.original.name:GetText()
+        if t and t ~= "" then
+            return NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
         end
     end
-    return CaptureVanillaNameplateSource(plate) or plate.wtRawName
+    return nil
 end
 
-local function UpdateNameplateFromPlate(plate, skipClutterUpdate)
+local function UpdateNameplateFromPlate(plate)
     if not plate then return end
     if not WoWTranslateDB or not WoWTranslateDB.enabled then return end
     if not WoWTranslateDB.translateNameplates then return end
     if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
 
     local overlay = GetNameplateOverlay(plate)
-    local fs = GetNameplateDisplayNameFont(plate)
-    if not fs or not fs.GetText then return end
-
-    local current = fs:GetText()
-    if not current or current == "" then return end
-    if plate.wtLastDisplay and current == plate.wtLastDisplay then return end
+    if not overlay then return end
 
     local rawName = ResolveNameplateRawName(plate)
     if not rawName or rawName == "" then return end
     plate.wtRawName = rawName
-    if not overlay then
-        plate.wtSourceName = rawName
-        SyncVanillaNameplateSourceText(plate, rawName)
-        fs = GetNameplateDisplayNameFont(plate)
-        if not fs or not fs.GetText then return end
-    end
 
-    if overlay and plate.wtLastDisplay then
-        local plain = NormalizeTruncatedNameplateName(current)
-        if plain == rawName or OverheadDisplayMatchesRawName(current, rawName) then
-            plate.wtLastDisplay = nil
-        end
-    end
-
-    if not ShouldTranslatePlayerName(rawName) then return end
-
-    local cached, found = WoWTranslate_CacheGet(NameCacheKey(rawName))
-    if found then
-        local function applyDisplay(displayName)
-            if plate.wtRawName ~= rawName then return end
-            local formatted
-            if overlay then
-                formatted = FormatNameplateOverlayText(rawName, displayName)
-            else
-                formatted = FormatNameplateVanillaText(rawName, displayName, plate)
+    if ShouldTranslatePlayerName(rawName) then
+        local fs = overlay.name
+        if fs and fs.GetText then
+            if plate.wtLastDisplay then
+                local cur = fs:GetText()
+                if cur then
+                    local plain = NormalizeTruncatedNameplateName(cur)
+                    if plain == rawName or OverheadDisplayMatchesRawName(cur, rawName) then
+                        plate.wtLastDisplay = nil
+                    end
+                end
             end
-            if plate.wtLastDisplay ~= formatted then
-                ApplyNameplateNameText(fs, formatted, plate, rawName, nil)
-                plate.wtLastDisplay = formatted
-                if overlay and overlay.name and overlay.name.Show then overlay.name:Show() end
+            local current = fs:GetText() or ""
+            if not (plate.wtLastDisplay and current == plate.wtLastDisplay) then
+                local cached, found = WoWTranslate_CacheGet(NameCacheKey(rawName))
+                local function applyNameDisplay(displayName)
+                    if plate.wtRawName ~= rawName then return end
+                    local formatted = FormatNameplateOverlayText(rawName, displayName)
+                    if plate.wtLastDisplay ~= formatted then
+                        ApplyNameplateNameText(fs, formatted, plate, rawName, nil)
+                        plate.wtLastDisplay = formatted
+                        if overlay.name and overlay.name.Show then overlay.name:Show() end
+                    end
+                end
+                if found then
+                    applyNameDisplay(cached)
+                elseif not plate.wtResolvePending then
+                    plate.wtResolvePending = true
+                    ResolvePlayerDisplayName(rawName, function(displayName)
+                        plate.wtResolvePending = nil
+                        if plate.wtRawName ~= rawName then return end
+                        if displayName then applyNameDisplay(displayName) end
+                    end)
+                end
             end
         end
-        applyDisplay(cached)
-        return
-    end
-
-    if plate.wtResolvePending then return end
-    plate.wtResolvePending = true
-    ResolvePlayerDisplayName(rawName, function(displayName)
-        plate.wtResolvePending = nil
-        if plate.wtRawName ~= rawName then return end
-        local formatted
-        if overlay then
-            formatted = FormatNameplateOverlayText(rawName, displayName)
-        else
-            formatted = FormatNameplateVanillaText(rawName, displayName, plate)
-        end
-        if plate.wtLastDisplay ~= formatted then
-            ApplyNameplateNameText(fs, formatted, plate, rawName, nil)
-            plate.wtLastDisplay = formatted
-            if overlay and overlay.name and overlay.name.Show then overlay.name:Show() end
-        end
-    end)
-end
-
-local function RunNameplateNameUpdate(plate, skipClutter)
-    if not plate or not NameplateNameUpdateDue(plate) then return end
-    if GetNameplateOverlay(plate) then
-        UpdateNameplateFromPlate(plate, true)
-    else
-        UpdateNameplateFromPlate(plate, skipClutter)
     end
 end
 
 local function ResetNameplatePlateState(plate)
     if not plate then return end
-    plate.wtSourceName    = nil
-    plate.wtRawName       = nil
-    plate.wtLastDisplay   = nil
-    plate.wtResolvePending = nil
-    plate.wtNextNameUpdate = nil
-    plate.wtHealthbar     = nil
-    if plate.name and plate.name.SetAlpha then plate.name:SetAlpha(1) end
+    plate.wtRawName             = nil
+    plate.wtLastDisplay         = nil
+    plate.wtResolvePending      = nil
+    plate.wtNextNameUpdate      = nil
+    plate.wtLastGuildDisplay    = nil
+    plate.wtGuildResolvePending = nil
+    plate.wtPendingRawGuild     = nil
+    plate.wtOOCClutterHidden    = nil
+    plate.wtClutterFrames       = nil
+    plate.wtNameDetachedForOOC  = nil
+    if plate.wtGuildLine and plate.wtGuildLine.Hide then plate.wtGuildLine:Hide() end
 end
 
-local function RegisterStandaloneNameplate(plate)
+-- ============================================================================
+-- OOC HEALTHBAR HIDE + GUILD DISPLAY (ShaguPlates only)
+-- ============================================================================
+
+local function IsNameplateUnitInCombat(plate)
+    if not UnitAffectingCombat then return true end
+    local ok, c = pcall(UnitAffectingCombat, "player")
+    return ok and c
+end
+
+-- ShaguPlates parents overlay.name under overlay.health; detach so the name
+-- remains visible when the health bar is hidden out of combat.
+local function EnsureOverlayNameDetached(parent)
+    local overlay = GetNameplateOverlay(parent)
+    if not overlay or not overlay.name then return end
+    if not WoWTranslateDB or not WoWTranslateDB.nameplateHideHealthOOC then
+        parent.wtNameDetachedForOOC = nil; return
+    end
+    if IsNameplateUnitInCombat(parent) then
+        parent.wtNameDetachedForOOC = nil; return
+    end
+    if overlay.name:GetParent() ~= overlay then
+        overlay.name:SetParent(overlay)
+    end
+    overlay.name:ClearAllPoints()
+    overlay.name:SetPoint("TOP", overlay, "TOP", 0, 0)
+    overlay.name:Show()
+    parent.wtNameDetachedForOOC = true
+end
+
+-- Health bar, its backdrop, and level text — hidden together out of combat.
+local function CollectNameplateClutterFrames(parent)
+    local frames = {}
+    local function add(f)
+        if f and f.Hide and f.Show then table.insert(frames, f) end
+    end
+    local overlay = GetNameplateOverlay(parent)
+    if overlay then
+        local bar = overlay.health
+        add(bar)
+        if bar and bar.backdrop then add(bar.backdrop) end
+        if overlay.level and overlay.level.Hide then add(overlay.level) end
+    end
+    return frames
+end
+
+local function SetNameplateClutterVisible(plate, visible)
+    local frames = plate.wtClutterFrames
+    for i = 1, table.getn(frames) do
+        if visible then frames[i]:Show() else frames[i]:Hide() end
+    end
+    plate.wtOOCClutterHidden = not visible or nil
+end
+
+-- ============================================================================
+-- OOC GUILD DISPLAY (ShaguPlates only)
+-- ============================================================================
+
+local wtNameplateGuildByPlayer = {}
+
+local function LookupRawGuildForNameplate(rawName)
+    if not rawName or rawName == "" then return nil end
+    if wtNameplateGuildByPlayer[rawName] then return wtNameplateGuildByPlayer[rawName] end
+    if ShaguPlates_playerDB and ShaguPlates_playerDB[rawName] then
+        local g = ShaguPlates_playerDB[rawName].guild
+        if g and g ~= "" then wtNameplateGuildByPlayer[rawName] = g; return g end
+    end
+    local unit = FindPlayerUnitByName(rawName)
+    if unit and GetGuildInfo then
+        local ok, guild = pcall(GetGuildInfo, unit)
+        if ok and guild and guild ~= "" then
+            wtNameplateGuildByPlayer[rawName] = guild; return guild
+        end
+    end
+    return nil
+end
+
+local function FormatNameplateGuildLine(rawGuild, displayGuild)
+    displayGuild = displayGuild or rawGuild
+    if not displayGuild or displayGuild == "" then return nil end
+    local plain = StripColorCodes(displayGuild) or displayGuild
+    local line = "<" .. plain .. ">"
+    if rawGuild and displayGuild ~= rawGuild then line = line .. "*" end
+    return line
+end
+
+local function EnsureNameplateGuildFont(plate, nameFs)
+    if plate.wtGuildLine and plate.wtGuildLine.SetText then return plate.wtGuildLine end
+    local overlay = GetNameplateOverlay(plate)
+    local parent = overlay or plate
+    local anchor = (overlay and overlay.name and overlay.name.GetText and overlay.name) or nameFs
+    if not anchor then return nil end
+    local fs = parent:CreateFontString("WoWTranslateNameplateGuild", "OVERLAY")
+    if anchor.GetFont and fs.SetFont then
+        local font, size, flags = anchor:GetFont()
+        local small = (size and size > 8) and (size - 2) or 10
+        if font then fs:SetFont(font, small, flags) end
+    end
+    fs:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+    plate.wtGuildLine = fs
+    return fs
+end
+
+local function HideNameplateGuildLine(plate)
     if not plate then return end
-    wtNameplateRegistry[plate] = true
-    AssignNameplateRegions(plate)
-    if plate.wtWoWTranslateShowHooked then return end
-    local oldShow = plate:GetScript("OnShow")
-    plate:SetScript("OnShow", function()
-        if oldShow then oldShow() end
-        ResetNameplatePlateState(plate)
-        AssignNameplateRegions(plate)
-        if plate.name and plate.name.GetText then
-            local t = plate.name:GetText()
-            if t and t ~= "" then
-                plate.wtSourceName = NormalizeTruncatedNameplateName(StripOverheadDisplaySuffix(t))
-                SyncVanillaNameplateSourceText(plate, plate.wtSourceName)
-                EnsureVanillaTranslateNameFont(plate)
-            end
-        end
-    end)
-    plate.wtWoWTranslateShowHooked = true
+    if plate.wtGuildLine and plate.wtGuildLine.Hide then plate.wtGuildLine:Hide() end
+    plate.wtLastGuildDisplay    = nil
+    plate.wtGuildResolvePending = nil
+    plate.wtPendingRawGuild     = nil
 end
 
-local function ScanWorldFrameNameplates()
-    local parentcount = WorldFrame:GetNumChildren()
-    if wtNameplateScanInitialized < parentcount then
-        local childs = { WorldFrame:GetChildren() }
-        for i = wtNameplateScanInitialized + 1, parentcount do
-            local plate = childs[i]
-            if plate and IsNamePlateFrame(plate) then
-                RegisterStandaloneNameplate(plate)
+local function UpdateNameplateGuildOOC(plate)
+    if not plate then return end
+    if not WoWTranslateDB or not WoWTranslateDB.enabled or not WoWTranslateDB.nameplateGuildOOC then
+        HideNameplateGuildLine(plate); return
+    end
+    if WoWTranslateDB.disableWhileAfk and playerIsAFK then
+        HideNameplateGuildLine(plate); return
+    end
+    if IsNameplateUnitInCombat(plate) then
+        HideNameplateGuildLine(plate); return
+    end
+
+    local rawName = plate.wtRawName
+    if not rawName or rawName == "" then HideNameplateGuildLine(plate); return end
+    if not IsNameplatePlayerForColor(plate, rawName) then
+        HideNameplateGuildLine(plate); return
+    end
+
+    local nameFs = GetNameplateDisplayNameFont(plate)
+    if not nameFs then return end
+
+    EnsureOverlayNameDetached(plate)
+
+    local guildFs = EnsureNameplateGuildFont(plate, nameFs)
+    if not guildFs then return end
+
+    local overlay = GetNameplateOverlay(plate)
+    local guildAnchor = (overlay and overlay.name) or nameFs
+    guildFs:ClearAllPoints()
+    guildFs:SetPoint("TOP", guildAnchor, "BOTTOM", 0, -2)
+
+    local rawGuild = LookupRawGuildForNameplate(rawName)
+    if not rawGuild or rawGuild == "" then HideNameplateGuildLine(plate); return end
+    plate.wtPendingRawGuild = rawGuild
+
+    local function showLine(displayGuild)
+        if (plate.wtRawName or "") ~= rawName then return end
+        local line = FormatNameplateGuildLine(rawGuild, displayGuild)
+        if not line then HideNameplateGuildLine(plate); return end
+        if plate.wtLastGuildDisplay == line then
+            if guildFs.IsShown then
+                local s = guildFs:IsShown()
+                if s == 1 or s == true then return end
             end
         end
-        wtNameplateScanInitialized = parentcount
+        plate.wtLastGuildDisplay = line
+        guildFs:SetText(line)
+        guildFs:Show()
     end
-    PruneNameplateRegistry()
-    for plate in pairs(wtNameplateRegistry) do
-        if NameplateFrameVisible(plate) and not GetNameplateOverlay(plate) then
-            RunNameplateNameUpdate(plate, false)
+
+    if WoWTranslateDB.translateGuildNames and WoWTranslate_ResolveGuildDisplayName then
+        local cacheKey = NameCacheKey("guild:" .. rawGuild)
+        local cached, found = WoWTranslate_CacheGet(cacheKey)
+        if found then showLine(cached); return end
+        if plate.wtGuildResolvePending == rawName then
+            if plate.wtLastGuildDisplay then
+                guildFs:SetText(plate.wtLastGuildDisplay); guildFs:Show()
+            end
+            return
+        end
+        plate.wtGuildResolvePending = rawName
+        WoWTranslate_ResolveGuildDisplayName(rawGuild, function(displayGuild)
+            plate.wtGuildResolvePending = nil
+            showLine(displayGuild)
+        end)
+        return
+    end
+
+    showLine(rawGuild)
+end
+
+local function UpdateNameplateHealthbarVisibility(plate)
+    if not plate then return end
+    EnsureOverlayNameDetached(plate)
+    if not plate.wtClutterFrames or table.getn(plate.wtClutterFrames) == 0 then
+        plate.wtClutterFrames = CollectNameplateClutterFrames(plate)
+    end
+    if table.getn(plate.wtClutterFrames) > 0 then
+        if not WoWTranslateDB or not WoWTranslateDB.nameplateHideHealthOOC then
+            if plate.wtOOCClutterHidden then SetNameplateClutterVisible(plate, true) end
+        elseif IsNameplateUnitInCombat(plate) then
+            if plate.wtOOCClutterHidden then SetNameplateClutterVisible(plate, true) end
+        else
+            SetNameplateClutterVisible(plate, false)
         end
     end
+    UpdateNameplateGuildOOC(plate)
 end
+
+-- ============================================================================
 
 function WoWTranslate_OnNameplateUpdate(plate)
     plate = plate or this
     if not plate then return end
-    if not GetNameplateOverlay(plate) and not (ShaguPlates and ShaguPlates.nameplates) then return end
-    if GetNameplateOverlay(plate) then
-        RunNameplateNameUpdate(plate, true)
-    else
-        RunNameplateNameUpdate(plate, false)
-    end
+    if not GetNameplateOverlay(plate) then return end
+    if not NameplateNameUpdateDue(plate) then return end
+    UpdateNameplateFromPlate(plate)
+    UpdateNameplateHealthbarVisibility(plate)
 end
 
 function WoWTranslate_OnNameplateShow(plate)
@@ -1972,11 +2206,9 @@ local function HookShaguNameplates()
     local lib = ShaguTweaks and ShaguTweaks.libnameplate
     if not lib then return false end
     if not lib.wtWoWTranslateHooked then
-        if ShaguPlates and ShaguPlates.nameplates then
-            table.insert(lib.OnUpdate, function(plate)
-                WoWTranslate_OnNameplateUpdate(plate)
-            end)
-        end
+        table.insert(lib.OnUpdate, function(plate)
+            WoWTranslate_OnNameplateUpdate(plate)
+        end)
         table.insert(lib.OnShow, function(plate)
             WoWTranslate_OnNameplateShow(plate)
         end)
@@ -2004,32 +2236,118 @@ local function HookShaguPlatesNameplates()
         if not WoWTranslateDB.translateNameplates then return end
         if WoWTranslateDB.disableWhileAfk and playerIsAFK then return end
         parent.wtNextNameUpdate = nil
-        UpdateNameplateFromPlate(parent, true)
+        UpdateNameplateFromPlate(parent)
+        UpdateNameplateHealthbarVisibility(parent)
     end
     np.wtWoWTranslateWrapped = true
     wtShaguPlatesHooked = true
     return true
 end
 
-local wtNameplateScanElapsed = 0
-local NAMEPLATE_SCAN_INTERVAL = 0.25
-
-local function StartStandaloneNameplateScanner()
-    if wtNameplateScanFrame then return end
-    wtNameplateScanFrame = CreateFrame("Frame", "WoWTranslateNameplateScanner", UIParent)
-    wtNameplateScanFrame:SetScript("OnUpdate", function()
-        wtNameplateScanElapsed = wtNameplateScanElapsed + arg1
-        if wtNameplateScanElapsed < NAMEPLATE_SCAN_INTERVAL then return end
-        wtNameplateScanElapsed = 0
-        ScanWorldFrameNameplates()
-    end)
-end
-
 local function HookNameplates()
     if not WoWTranslateDB or not WoWTranslateDB.translateNameplates then return end
     HookShaguNameplates()
     HookShaguPlatesNameplates()
-    StartStandaloneNameplateScanner()
+end
+-- Forward reference: allows WoWTranslate_SetTranslateNameplates to hook ShaguPlates
+-- when the feature is toggled on mid-session.
+wtNameplateScanStart = HookNameplates
+
+-- ============================================================================
+-- GROUP FINDER (LFT) TRANSLATION
+-- ============================================================================
+-- Translates the title and description of each visible LFT group entry.
+-- Hooks LFT_UpdateGroupsList (post-render); requires LFT addon to be loaded.
+-- Gated on WoWTranslateDB.translateGroupFinder.
+
+local lftHooked = false
+
+-- After async translation resolves, find the entry frame still displaying
+-- the same group and update the text widget.
+local function LFT_ApplyTranslation(entryId, isTitle, translated)
+    for i = 1, 8 do
+        local btn = _G["LFTFrameGroupEntry"..i]
+        if btn and btn:IsShown() and btn.data and btn.data.id == entryId then
+            local suffix = isTitle and "Text" or "SubText"
+            local widget = _G["LFTFrameGroupEntry"..i..suffix]
+            if widget then widget:SetText(translated) end
+        end
+    end
+end
+
+local function LFT_TranslateField(entryId, rawText, isTitle)
+    if not rawText or rawText == "" then return end
+    local detectedLang = DetectSourceLanguage(rawText)
+    if not detectedLang then return end
+
+    -- Cache hit: instant, no API call needed
+    local cached, found = WoWTranslate_CacheGet(rawText)
+    if found then
+        LFT_ApplyTranslation(entryId, isTitle, cached)
+        return
+    end
+
+    -- Exact glossary hit: full-text WoW slang match
+    if WoWTranslate_CheckGlossaryExact then
+        local glossaryResult = WoWTranslate_CheckGlossaryExact(rawText)
+        if glossaryResult then
+            WoWTranslate_CacheSave(rawText, glossaryResult)
+            LFT_ApplyTranslation(entryId, isTitle, glossaryResult)
+            return
+        end
+    end
+
+    -- Partial glossary preprocessing then API translation
+    local textToTranslate = rawText
+    if WoWTranslate_CheckGlossaryPartial then
+        local partial = WoWTranslate_CheckGlossaryPartial(rawText)
+        if partial then textToTranslate = partial end
+    end
+
+    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then return end
+    WoWTranslate_API.Translate(textToTranslate, function(translation, err)
+        if translation and translation ~= "" then
+            WoWTranslate_CacheSave(rawText, translation)
+            LFT_ApplyTranslation(entryId, isTitle, translation)
+        end
+    end, detectedLang)
+end
+
+local function LFT_ScanVisibleEntries()
+    if not WoWTranslateDB or not WoWTranslateDB.translateGroupFinder then return end
+    if not WoWTranslateDB.enabled then return end
+    for i = 1, 8 do
+        local btn = _G["LFTFrameGroupEntry"..i]
+        if btn and btn:IsShown() and btn.data then
+            local entry = btn.data
+            LFT_TranslateField(entry.id, entry.title, true)
+            LFT_TranslateField(entry.id, entry.description, false)
+        end
+    end
+end
+
+local function HookLFT()
+    if lftHooked then return end
+    if not LFT_UpdateGroupsList then return end
+    local originalUpdate = LFT_UpdateGroupsList
+    LFT_UpdateGroupsList = function()
+        originalUpdate()
+        LFT_ScanVisibleEntries()
+    end
+    lftHooked = true
+end
+
+function WoWTranslate_SetTranslateGroupFinder(enabled)
+    if WoWTranslateDB then
+        WoWTranslateDB.translateGroupFinder = enabled
+    end
+    if enabled then
+        HookLFT()
+        -- Refresh visible entries if LFT is open
+        if LFTFrame and LFTFrame:IsShown() then
+            LFT_ScanVisibleEntries()
+        end
+    end
 end
 
 -- ============================================================================
@@ -3302,6 +3620,9 @@ local function InitializeSettings()
     if WoWTranslateDB.translateNameplates == nil then
         WoWTranslateDB.translateNameplates = false
     end
+    if WoWTranslateDB.translateGroupFinder == nil then
+        WoWTranslateDB.translateGroupFinder = false
+    end
     if WoWTranslateDB.outgoingButtonPos == nil then
         WoWTranslateDB.outgoingButtonPos = { x = 100, y = 100 }
     end
@@ -3329,7 +3650,7 @@ local function OnAddonLoaded()
     local cacheCount = WoWTranslate_CacheStats().entries
     local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.4 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.5 - " .. dllStatus .. " | /wt show")
 end
 
 -- ============================================================================
@@ -3379,6 +3700,11 @@ local function OnPlayerLogin()
     -- Install outgoing hook if enabled
     if WoWTranslateDB and WoWTranslateDB.outgoingEnabled then
         InstallOutgoingHook()
+    end
+
+    -- Install LFT hook if enabled (LFT loads before WoWTranslate alphabetically)
+    if WoWTranslateDB and WoWTranslateDB.translateGroupFinder then
+        HookLFT()
     end
 end
 

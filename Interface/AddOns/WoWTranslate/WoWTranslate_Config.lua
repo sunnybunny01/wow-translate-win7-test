@@ -77,7 +77,7 @@ end
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
 configFrame:SetWidth(580)
-configFrame:SetHeight(730)
+configFrame:SetHeight(800)
 configFrame:SetPoint("CENTER", 0, 0)
 configFrame:SetMovable(true)
 configFrame:EnableMouse(true)
@@ -105,7 +105,7 @@ end)
 -- Title
 local title = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOP", configFrame, "TOP", 0, -20)
-title:SetText("WoWTranslate Configuration")
+title:SetText("WoWTranslate Configuration - v1.5")
 
 -- Close button
 local closeBtn = CreateFrame("Button", nil, configFrame, "UIPanelCloseButton")
@@ -174,6 +174,9 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
         elseif key == "translateGuildNames" then
             WoWTranslate_SetTranslateGuildNames(enabled)
             WoWTranslate_TempConfig.translateGuildNames = enabled
+        elseif key == "translateGroupFinder" then
+            WoWTranslate_SetTranslateGroupFinder(enabled)
+            WoWTranslate_TempConfig.translateGroupFinder = enabled
         elseif key == "showOutgoingButton" then
             WoWTranslate_SetOutgoingButtonVisible(enabled)
             WoWTranslate_TempConfig.showOutgoingButton = enabled
@@ -310,6 +313,10 @@ local Y_EXP_ROW      = -593
 local Y_NAME_HEADER  = -625
 local Y_NAME_ROW     = -647
 
+local Y_SP_HEADER    = -679
+local Y_SP_ROW1      = -701
+local Y_SP_ROW2      = -723
+
 -- Incoming Translation Section
 CreateHeader("Incoming Translation (Chat -> You)", Y_IN_HEADER)
 configFrame.elements.inEnabled     = CreateCheckbox("Enable Incoming Translation", 25,  Y_IN_ENABLE, "enabled", nil)
@@ -322,6 +329,12 @@ roleInfoText:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -20, Y_IN_LANG - 31)
 roleInfoText:SetText("T = tank,  N = healer,  D = dps")
 roleInfoText:SetTextColor(0.2, 1, 0.2)
 roleInfoText:SetFont("Fonts\\FRIZQT__.TTF", 9, "ITALIC")
+
+local otherInfoText = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+otherInfoText:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -20, Y_IN_LANG - 51)
+otherInfoText:SetText("M, MM , MMM+ = Whisper")
+otherInfoText:SetTextColor(1, 0, 1)
+otherInfoText:SetFont("Fonts\\FRIZQT__.TTF", 9, "ITALIC")
 
 -- Source Language Selection
 local srcLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -464,13 +477,24 @@ expHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_EXP_HEADER)
 expHeader:SetText("Experimental:")
 expHeader:SetTextColor(1, 0.5, 0)
 
-configFrame.elements.replaceMode      = CreateCheckbox("Replace original with translation", 25,  Y_EXP_ROW, "replaceMode",         nil)
-configFrame.elements.translateNP      = CreateCheckbox("Translate Nameplates (ShaguPlates)", 290, Y_EXP_ROW, "translateNameplates", nil)
+configFrame.elements.replaceMode      = CreateCheckbox("Replace original with translation", 25,  Y_EXP_ROW, "replaceMode", nil)
+configFrame.elements.translateGF      = CreateCheckbox("Translate Group Finder",           270, Y_EXP_ROW, "translateGroupFinder", nil)
 
 -- Name Translation Section
 CreateHeader("Name Translation:", Y_NAME_HEADER)
 configFrame.elements.translateNames  = CreateCheckbox("Sender names (chat/tooltip)", 25,  Y_NAME_ROW, "translatePlayerNames", nil)
 configFrame.elements.translateGuilds = CreateCheckbox("Guild names (tooltip)",       290, Y_NAME_ROW, "translateGuildNames", nil)
+
+-- ShaguPlates Section
+local spHeader = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+spHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_SP_HEADER)
+spHeader:SetText("ShaguPlates:")
+spHeader:SetTextColor(0, 1, 1)
+
+configFrame.elements.translateNP    = CreateCheckbox("Translate Nameplates",        25,  Y_SP_ROW1, "translateNameplates",   nil)
+configFrame.elements.npClassColor   = CreateCheckbox("Class-colored names",         290, Y_SP_ROW1, "playerNameClassColor",  nil)
+configFrame.elements.npGuildOOC     = CreateCheckbox("Guild (out of combat)",        25,  Y_SP_ROW2, "nameplateGuildOOC",     nil)
+configFrame.elements.npHideHealth   = CreateCheckbox("Hide healthbar (out of combat)", 290, Y_SP_ROW2, "nameplateHideHealthOOC", nil)
 
 -- Bottom Buttons
 local clearBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
@@ -516,9 +540,13 @@ local function RefreshUI()
     end
     if e.colorFollow then e.colorFollow:SetChecked(cfg.translationColorFollow) end
     if e.replaceMode    then e.replaceMode:SetChecked(cfg.replaceMode) end
-    if e.translateNP    then e.translateNP:SetChecked(cfg.translateNameplates) end
+    if e.translateGF    then e.translateGF:SetChecked(cfg.translateGroupFinder) end
     if e.translateNames then e.translateNames:SetChecked(cfg.translatePlayerNames) end
     if e.translateGuilds then e.translateGuilds:SetChecked(cfg.translateGuildNames) end
+    if e.translateNP    then e.translateNP:SetChecked(cfg.translateNameplates) end
+    if e.npClassColor   then e.npClassColor:SetChecked(cfg.playerNameClassColor) end
+    if e.npGuildOOC     then e.npGuildOOC:SetChecked(cfg.nameplateGuildOOC) end
+    if e.npHideHealth   then e.npHideHealth:SetChecked(cfg.nameplateHideHealthOOC) end
     if e.inEnabled then e.inEnabled:SetChecked(cfg.enabled) end
     if e.afkDisable then e.afkDisable:SetChecked(cfg.disableWhileAfk) end
     if e.translateSystem then e.translateSystem:SetChecked(cfg.translateSystemMessages) end
