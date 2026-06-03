@@ -1,4 +1,3 @@
-
 name: Build WoWTranslate DLL
 
 on:
@@ -77,16 +76,16 @@ jobs:
         
         # 自动生成适配当前 WinINet 版本的免密安装说明
         cat << 'EOF' > release/INSTALL.txt
-    WoWTranslate v0.14 安装说明
-    =========================
+        WoWTranslate v0.14 安装说明
+        =========================
 
-    1. 将 WoWTranslate.dll 复制到你的魔兽客户端根目录下 (与 WoW.exe 在同一文件夹)。
-    2. 打开或创建魔兽根目录下的 dlls.txt 文件，在里面添加一行: WoWTranslate.dll
-    3. 将 WoWTranslate 文件夹复制到游戏目录的 Interface/AddOns/ 中。
-    4. 启动游戏即可直接使用！当前版本基于 WinINet 重构，完全免费且不再需要任何 API 密钥。
+        1. 将 WoWTranslate.dll 复制到你的魔兽客户端根目录下 (与 WoW.exe 在同一文件夹)。
+        2. 打开或创建魔兽根目录下的 dlls.txt 文件，在里面添加一行: WoWTranslate.dll
+        3. 将 WoWTranslate 文件夹复制到游戏目录的 Interface/AddOns/ 中。
+        4. 启动游戏即可直接使用！当前版本基于 WinINet 重构，完全免费且不再需要任何 API 密钥。
 
-    如需帮助，可在游戏内输入: /wt show
-    EOF
+        如需帮助，可在游戏内输入: /wt show
+        EOF
         ls -la release/
 
     - name: Create release zip
