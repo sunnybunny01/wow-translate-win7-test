@@ -142,7 +142,7 @@ int __fastcall detoured_UnitXP(void* L) {
 
                     // VERSION - Get version string
                     else if (subcmd == "version") {
-                        lua_pushstring(L, "WoWTranslate v0.13 - Free translation via Google");
+                        lua_pushstring(L, "WoWTranslate v0.14 - Free translation via Google");
                         return 1;
                     }
 
