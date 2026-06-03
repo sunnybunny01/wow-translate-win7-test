@@ -2,7 +2,7 @@
 // Sends GET requests to translate.googleapis.com (client=gtx) — no API key required
 
 #include <windows.h>
-#include <winhttp.h>
+#include <wininet.h> // Changed from winhttp.h to wininet.h for Win7 proxy compatibility
 #include <string>
 #include <algorithm>
 #include <sstream>
@@ -15,6 +15,8 @@
 #include "../include/translator_core.h"
 #include "../include/logging.h"
 #include "../include/utils.h"
+
+#pragma comment(lib, "wininet.lib") // Ensure WinINet library is linked
 
 using namespace std;
 
@@ -172,27 +174,32 @@ bool TranslationClient::Initialize() {
     const std::string host = "translate.googleapis.com";
     const int port = 443;
 
-    LOG_INFO("Initializing Google Free translation client");
+    LOG_INFO("Initializing Google Free translation client (WinINet mode)");
 
-    hSession = WinHttpOpen(L"WoWTranslate/1.0",
-                           WINHTTP_ACCESS_TYPE_NO_PROXY,
-                           WINHTTP_NO_PROXY_NAME,
-                           WINHTTP_NO_PROXY_BYPASS,
-                           0);
+    // INTERNET_OPEN_TYPE_PRECONFIG tells WinINet to use the system/IE proxy configured by your game accelerator
+    hSession = InternetOpenW(L"WoWTranslate/1.0",
+                             INTERNET_OPEN_TYPE_PRECONFIG,
+                             NULL,
+                             NULL,
+                             0);
     if (!hSession) {
-        LOG_ERROR("Failed to initialize WinHTTP session");
+        LOG_ERROR("Failed to initialize WinINet session");
         return false;
     }
 
-    // 8-second timeouts so a blocked/unreachable endpoint fails fast
-    WinHttpSetTimeouts(hSession, 8000, 8000, 8000, 8000);
+    // Set 8-second timeouts for WinINet
+    DWORD timeout = 8000;
+    InternetSetOptionW(hSession, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+    InternetSetOptionW(hSession, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
+    InternetSetOptionW(hSession, INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
 
     wstring wHost(host.begin(), host.end());
-    hConnect = WinHttpConnect(hSession, wHost.c_str(),
-                              static_cast<INTERNET_PORT>(port), 0);
+    hConnect = InternetConnectW(hSession, wHost.c_str(),
+                                static_cast<INTERNET_PORT>(port),
+                                NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to translate.googleapis.com");
-        WinHttpCloseHandle(hSession);
+        LOG_ERROR("Failed to connect to translate.googleapis.com via WinINet");
+        InternetCloseHandle(hSession);
         hSession = nullptr;
         return false;
     }
@@ -200,10 +207,9 @@ bool TranslationClient::Initialize() {
     running = true;
     workerThread = thread(&TranslationClient::WorkerThreadFunc, this);
     initialized = true;
-    LOG_INFO("Google Free translation client initialized");
+    LOG_INFO("Google Free translation client initialized successfully");
     return true;
 }
-
 
 void TranslationClient::Cleanup() {
     // Stop worker thread
@@ -215,12 +221,12 @@ void TranslationClient::Cleanup() {
     }
 
     if (hConnect) {
-        WinHttpCloseHandle(hConnect);
+        InternetCloseHandle(hConnect);
         hConnect = nullptr;
     }
 
     if (hSession) {
-        WinHttpCloseHandle(hSession);
+        InternetCloseHandle(hSession);
         hSession = nullptr;
     }
 
@@ -282,62 +288,49 @@ string TranslationClient::HttpsGet(const string& path) {
 
     wstring wPath(path.begin(), path.end());
 
-    HINTERNET hRequest = WinHttpOpenRequest(
+    HINTERNET hRequest = HttpOpenRequestW(
         hConnect, L"GET", wPath.c_str(), nullptr,
-        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-        WINHTTP_FLAG_SECURE);
+        nullptr, nullptr,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
 
     if (!hRequest) {
-        LOG_ERROR("Failed to open GET request");
+        LOG_ERROR("Failed to open GET request via WinINet");
         return "";
     }
 
     // Identify as a browser to avoid 403s
     wstring headers = L"User-Agent: Mozilla/5.0\r\n";
-    WinHttpAddRequestHeaders(hRequest, headers.c_str(), (DWORD)-1,
-                             WINHTTP_ADDREQ_FLAG_ADD);
+    HttpAddRequestHeadersW(hRequest, headers.c_str(), (DWORD)-1,
+                           HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
 
-    BOOL result = WinHttpSendRequest(hRequest,
-                                     WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                                     nullptr, 0, 0, 0);
+    BOOL result = HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0);
 
     string response;
-    if (result && WinHttpReceiveResponse(hRequest, nullptr)) {
-        // Read HTTP status code before consuming the body.
-        // A 429 response has an unparseable body; surface it explicitly
-        // so the Lua side can trigger immediate backoff rather than treating
-        // it as a generic API parse failure.
+    if (result) {
+        // Read HTTP status code
         DWORD statusCode = 0;
         DWORD statusLen  = sizeof(DWORD);
-        WinHttpQueryHeaders(hRequest,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            WINHTTP_HEADER_NAME_BY_INDEX,
-            &statusCode, &statusLen,
-            WINHTTP_NO_HEADER_INDEX);
+        HttpQueryInfoW(hRequest,
+            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+            &statusCode, &statusLen, NULL);
+            
         if (statusCode == 429) {
             LOG_WARNING("Rate limited by Google (HTTP 429)");
-            WinHttpCloseHandle(hRequest);
+            InternetCloseHandle(hRequest);
             return "HTTP_429";
         }
 
-        DWORD bytesAvailable = 0;
+        // Read data stream sequentially using standard WinINet buffer loop
         char buffer[8192];
-        while (WinHttpQueryDataAvailable(hRequest, &bytesAvailable)
-               && bytesAvailable > 0) {
-            DWORD bytesRead = 0;
-            DWORD bytesToRead = min(bytesAvailable, (DWORD)(sizeof(buffer) - 1));
-            if (WinHttpReadData(hRequest, buffer, bytesToRead, &bytesRead)) {
-                buffer[bytesRead] = '\0';
-                response += string(buffer, bytesRead);
-            } else {
-                break;
-            }
+        DWORD bytesRead = 0;
+        while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
+            response.append(buffer, bytesRead);
         }
     } else {
         LOG_ERROR("GET request failed: " + to_string(GetLastError()));
     }
 
-    WinHttpCloseHandle(hRequest);
+    InternetCloseHandle(hRequest);
     return response;
 }
 
@@ -510,7 +503,7 @@ void TranslationClient::WorkerThreadFunc() {
             string error;
 
             TranslationResult tr = TranslateText(request.text, translation,
-                                                  request.sourceLang, request.targetLang);
+                                                 request.sourceLang, request.targetLang);
 
             if (tr != TranslationResult::SUCCESS) {
                 switch (tr) {
