@@ -1,7 +1,7 @@
 #pragma once
 
 #include <windows.h>
-#include <winhttp.h>
+#include <wininet.h>
 #include <string>
 #include <unordered_map>
 #include <memory>
