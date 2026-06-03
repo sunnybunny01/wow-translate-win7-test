@@ -28,12 +28,12 @@ target_include_directories(WoWTranslate PRIVATE
 # MinHook library setup - Force 32-bit for WoW compatibility
 set(MINHOOK_LIB "${CMAKE_CURRENT_SOURCE_DIR}/third_party/MinHook.x86.lib")
 
-# Link libraries - adding winhttp for translation functionality
+# Link libraries - Changed from winhttp to wininet for Win7 proxy compatibility
 target_link_libraries(WoWTranslate PRIVATE
     kernel32
     user32
     shell32
-    winhttp
+    wininet
 )
 
 # Add MinHook if available
