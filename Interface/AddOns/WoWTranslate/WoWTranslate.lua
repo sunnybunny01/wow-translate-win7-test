@@ -43,17 +43,17 @@ local wtNameplateScanStart = nil
 
 -- Pre-translated prefixes for outgoing messages (zero API cost)
 local TRANSLATED_PREFIXES = {
-    zh = "[由WoWTranslate翻译]",
-    en = "[Translated by WoWTranslate]",
-    ko = "[WoWTranslate 번역]",
-    ja = "[WoWTranslate翻訳]",
-    ru = "[Переведено WoWTranslate]",
-    de = "[Übersetzt von WoWTranslate]",
-    fr = "[Traduit par WoWTranslate]",
-    es = "[Traducido por WoWTranslate]",
-    pt = "[Traduzido por WoWTranslate]",
+    zh = "[由聊天翻译插件翻译]",
+    en = "[由聊天翻译插件翻译]",
+    ko = "[由聊天翻译插件翻译]",
+    ja = "[由聊天翻译插件翻译]",
+    ru = "[由聊天翻译插件翻译]",
+    de = "[由聊天翻译插件翻译]",
+    fr = "[由聊天翻译插件翻译]",
+    es = "[由聊天翻译插件翻译]",
+    pt = "[由聊天翻译插件翻译]",
 }
-local DEFAULT_PREFIX = "[Translated by WoWTranslate]"
+local DEFAULT_PREFIX = "[由聊天翻译插件翻译]"
 
 -- Incoming channel detection state
 local currentIncomingChannel = nil
@@ -125,7 +125,7 @@ local defaults = {
         HARDCORE = false,
         ENGLISH = false,
     },
-    outgoingPrefix = "[Translated by WoWTranslate]",
+    outgoingPrefix = "[由聊天翻译插件翻译]",
     outgoingPrefixEnabled = true,
     disableWhileAfk = false,
     translateSystemMessages = false,  -- Don't translate system msgs, emotes, NPC speech
@@ -192,7 +192,7 @@ local function DebugLog(a1, a2, a3, a4, a5)
     local logEntry = "[" .. timestamp .. "] " .. msg
 
     if originalAddMessage then
-        originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFFFF00[WT-DEBUG] " .. msg .. "|r")
+        originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFFFF00[聊天翻译-调试] " .. msg .. "|r")
     end
 
     table.insert(WoWTranslateDebugLog, logEntry)
@@ -294,7 +294,7 @@ end
 -- Converts WoW-CN specific shorthands that the static glossary cannot handle.
 local function PreprocessIncoming(text)
     if not text then return text end
-    -- Normalize Chinese sentence terminators so Google returns a single translation
+    -- Normalize Chinese sentence terminators so bing returns a single translation
     -- segment instead of splitting on sentence boundaries (DLL only reads first segment).
     text = string.gsub(text, "\227\128\130", ". ")   -- 。 U+3002
     text = string.gsub(text, "\239\188\129", "! ")   -- ！ U+FF01
@@ -307,44 +307,44 @@ local function PreprocessIncoming(text)
     text = string.gsub(text, "(%d+)Y([^%a])", "%1s%2")
     text = string.gsub(text, "(%d+)Y$", "%1s")
     -- 110 = patrol mob (China police emergency number used as WoW slang)
-    text = string.gsub(text, "([^%w])110([^%w])", "%1patrol%2")
-    text = string.gsub(text, "([^%w])110$",        "%1patrol")
-    text = string.gsub(text, "^110([^%w])",         "patrol%1")
-    text = string.gsub(text, "^110$",               "patrol")
+    text = string.gsub(text, "([^%w])110([^%w])", "%1巡逻怪%2")
+    text = string.gsub(text, "([^%w])110$",        "%1巡逻怪")
+    text = string.gsub(text, "^110([^%w])",         "巡逻怪%1")
+    text = string.gsub(text, "^110$",               "巡逻怪")
     -- 88 = bye bye (CN internet send-off). Only when isolated (not part of e.g. "880").
-    text = string.gsub(text, "([^%w])88([^%w])", "%1bye%2")
-    text = string.gsub(text, "([^%w])88$",        "%1bye")
-    text = string.gsub(text, "^88([^%w])",         "bye%1")
-    text = string.gsub(text, "^88$",               "bye")
+    text = string.gsub(text, "([^%w])88([^%w])", "%1再见%2")
+    text = string.gsub(text, "([^%w])88$",        "%1再见")
+    text = string.gsub(text, "^88([^%w])",         "再见%1")
+    text = string.gsub(text, "^88$",               "再见")
     -- 666 = "awesome / well played" (CN superlative slang). Isolated only.
-    text = string.gsub(text, "([^%w])666([^%w])", "%1Good job!%2")
-    text = string.gsub(text, "([^%w])666$",        "%1Good job!")
-    text = string.gsub(text, "^666([^%w])",         "Good job!%1")
-    text = string.gsub(text, "^666$",               "Good job!")
+    text = string.gsub(text, "([^%w])666([^%w])", "%1打得好！%2")
+    text = string.gsub(text, "([^%w])666$",        "%1打得好！")
+    text = string.gsub(text, "^666([^%w])",         "打得好！%1")
+    text = string.gsub(text, "^666$",               "打得好！")
     -- 999 = res me (jiǔ = save/rescue, sounds like 9). Isolated only.
-    text = string.gsub(text, "([^%w])999([^%w])", "%1res me%2")
-    text = string.gsub(text, "([^%w])999$",        "%1res me")
-    text = string.gsub(text, "^999([^%w])",         "res me%1")
-    text = string.gsub(text, "^999$",               "res me")
+    text = string.gsub(text, "([^%w])999([^%w])", "%1救我%2")
+    text = string.gsub(text, "([^%w])999$",        "%1救我")
+    text = string.gsub(text, "^999([^%w])",         "救我%1")
+    text = string.gsub(text, "^999$",               "救我")
     -- 11 = yāo yāo = affirmative / "yes yes". [^%w] boundary; note: may fire on
     -- "我要11个" (I want 11 of them) since CJK chars are not %w in Lua 5.0.
-    text = string.gsub(text, "([^%w])11([^%w])", "%1yes%2")
-    text = string.gsub(text, "([^%w])11$",        "%1yes")
-    text = string.gsub(text, "^11([^%w])",         "yes%1")
-    text = string.gsub(text, "^11$",               "yes")
+    text = string.gsub(text, "([^%w])11([^%w])", "%1好%2")
+    text = string.gsub(text, "([^%w])11$",        "%1好")
+    text = string.gsub(text, "^11([^%w])",         "好%1")
+    text = string.gsub(text, "^11$",               "好")
     -- 密 (mì, U+5BC6, UTF-8 \229\175\134) = "whisper" in CN WoW slang.
     -- Two context-specific cases that the static glossary cannot cover safely:
     -- compound forms (密我/来密/求密/密密/etc.) are handled by the glossary.
     -- Case 1: entire message is just 密 (optionally with trailing punctuation).
     -- Anchoring to ^ and $ ensures this never fires inside 密码/保密/亲密.
     if string.find(text, "^\229\175\134[%. !?]*$") then
-        return "whisper"
+        return "密语"
     end
     -- Case 2: 密 immediately followed by an ASCII player name (e.g. "密 Playerone").
     -- Player names on vanilla servers are ASCII-only [A-Z][a-z]+.
     local _s, _e, pname = string.find(text, "^\229\175\134%s*([%a][%a%d]+)$")
     if pname then
-        return "whisper " .. pname
+        return "密语 " .. pname
     end
     return text
 end
@@ -426,7 +426,7 @@ itemCacheTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 local function TriggerItemCache(itemId)
     local itemString = "item:" .. itemId .. ":0:0:0"
     itemCacheTooltip:SetHyperlink(itemString)
-    DebugLog("Triggered cache for item:", itemId)
+    DebugLog("触发物品缓存：", itemId)
 end
 
 -- Extract all item IDs from a text string
@@ -447,7 +447,7 @@ local function ExtractItemIds(text)
         if idEnd then
             local itemIdStr = string.sub(text, idStart, idEnd - 1)
             local itemId = tonumber(itemIdStr)
-            DebugLog("Extracted item ID:", itemIdStr, "->", itemId or "INVALID")
+            DebugLog("提取物品ID：", itemIdStr, "->", itemId or "无效")
             if itemId then
                 table.insert(itemIds, itemId)
             end
@@ -456,7 +456,7 @@ local function ExtractItemIds(text)
         pos = linkStart + 1
     end
 
-    DebugLog("Total item IDs extracted:", table.getn(itemIds))
+    DebugLog("提取到物品ID总数：", table.getn(itemIds))
     return itemIds
 end
 
@@ -547,7 +547,7 @@ end
 -- Returns nil if pfQuest not loaded or quest not found
 local function GetEnglishQuestName(questId)
     if not pfDB or not pfDB["quests"] then
-        return nil  -- pfQuest not loaded
+        return nil  -- pfQuest未加载
     end
 
     -- Try custom quests first (more specific)
@@ -569,31 +569,31 @@ local function GetEnglishQuestName(questId)
         end
     end
 
-    return nil  -- Quest not in database
+    return nil  -- 未找到任务
 end
 
 -- Localize a hyperlink by replacing the display text with the English name
 -- Currently supports: items (via GetItemInfo)
 -- Falls back to original if localization not available
 local function LocalizeHyperlink(link)
-    DebugLog("LocalizeHyperlink called:", string.sub(link, 1, 40))
+    DebugLog("开始本地化链接：", string.sub(link, 1, 40))
 
     local linkType, linkData, displayText, colorCode = ParseHyperlink(link)
 
     if not linkType then
-        DebugLog("  Parse failed, returning original")
+        DebugLog("  解析失败，返回原始链接")
         return link  -- Couldn't parse, return original
     end
 
-    DebugLog("  Parsed:", linkType, linkData and string.sub(linkData, 1, 20) or "nil")
+    DebugLog("  解析结果：", linkType, linkData and string.sub(linkData, 1, 20) or "空")
 
     if linkType == "item" then
         local itemId = GetItemIdFromLinkData(linkData)
-        DebugLog("  Item ID:", itemId)
+        DebugLog("  物品ID：", itemId)
         if itemId then
             -- GetItemInfo returns: name, link, quality, iLevel, ...
             local itemName, itemLink = GetItemInfo(itemId)
-            DebugLog("  GetItemInfo returned:", itemName or "nil")
+            DebugLog("  获取物品信息：", itemName or "空")
 
             if itemName then
                 -- Always rebuild the link manually to ensure correct structure
@@ -604,7 +604,7 @@ local function LocalizeHyperlink(link)
                 else
                     result = "|H" .. linkType .. ":" .. linkData .. "|h[" .. itemName .. "]|h"
                 end
-                DebugLog("  Rebuilt link with English name")
+                DebugLog("  已重建英文名称物品链接")
                 return result
             else
                 -- Item not in client cache yet; trigger a server request so next
@@ -614,10 +614,10 @@ local function LocalizeHyperlink(link)
         end
     elseif linkType == "quest" then
         local questId = GetQuestIdFromLinkData(linkData)
-        DebugLog("  Quest ID:", questId)
+        DebugLog("  任务ID：", questId)
         if questId then
             local questName = GetEnglishQuestName(questId)
-            DebugLog("  GetEnglishQuestName returned:", questName or "nil")
+            DebugLog("  获取英文任务名：", questName or "空")
 
             if questName then
                 local result
@@ -626,18 +626,18 @@ local function LocalizeHyperlink(link)
                 else
                     result = "|H" .. linkType .. ":" .. linkData .. "|h[" .. questName .. "]|h"
                 end
-                DebugLog("  Rebuilt quest link with English name")
+                DebugLog("  已重建英文名称任务链接")
                 return result
             end
         end
     else
-        DebugLog("  Not an item or quest link, skipping localization")
+        DebugLog("  非物品/任务链接，跳过本地化")
     end
     -- Quest localization uses pfQuest database (if available)
     -- Spell localization not supported in vanilla WoW 1.12 (no GetSpellInfo API)
 
-    DebugLog("  No localized name, returning original")
-    return link  -- No localized name found, return original
+    DebugLog("  未找到本地化名称，返回原始链接")
+       return link  -- No localized name found, return original
 end
 
 -- ============================================================================
@@ -701,7 +701,7 @@ local function FindAllHyperlinks(text)
 
                 local fullLink = string.sub(text, actualStart, linkEnd)
 
-                DebugLog("Found hyperlink:", string.sub(fullLink, 1, 80))
+                DebugLog("找到链接：", string.sub(fullLink, 1, 80))
 
                 table.insert(hyperlinks, {
                     startPos = actualStart,
@@ -768,7 +768,7 @@ local function HasTranslatableContent(segments)
 end
 
 -- Strip WoW color codes from text before sending to translation API.
--- |cFFRRGGBB...text...|r sequences are not valid UTF-8 markup and confuse Google.
+-- |cFFRRGGBB...text...|r sequences are not valid UTF-8 markup and confuse bing.
 -- The pipe character in translations would also break the requestId|result|error wire format.
 local function StripColorCodes(text)
     if not text then return text end
@@ -804,7 +804,7 @@ local function SplitHeaderAndMessage(text)
 end
 
 -- Build text to translate: only text segments, hyperlinks become URL placeholders
--- URLs are preserved by Google Translate because they're recognized as web addresses
+-- URLs are preserved by bing Translate because they're recognized as web addresses
 local function BuildTranslatableText(segments)
     local parts = {}
     local linkIndex = 0
@@ -814,7 +814,7 @@ local function BuildTranslatableText(segments)
             table.insert(parts, StripColorCodes(seg.content))
         else
             linkIndex = linkIndex + 1
-            -- Space-pad the placeholder so Google never merges it with adjacent CJK bytes.
+            -- Space-pad the placeholder so bing never merges it with adjacent CJK bytes.
             -- Without spaces, "来人http://ph.wt/1" is treated as one URL and the Chinese
             -- is left untranslated.  The spaces are benign — ReconstructMessage uses a
             -- substring search so it finds "http://ph.wt/N" inside " http://ph.wt/N ".
@@ -855,14 +855,14 @@ local function ReconstructMessage(segments, translatedText)
 
         local found = false
 
-        DebugLog("Link", i, "content:", string.sub(linkContents[i] or "nil", 1, 80))
+        DebugLog("链接", i, "内容：", string.sub(linkContents[i] or "nil", 1, 80))
 
         -- Try exact match first
         local startPos, endPos = string.find(workText, placeholder, 1, true)
         if startPos then
             workText = string.sub(workText, 1, startPos - 1) .. linkContents[i] .. string.sub(workText, endPos + 1)
             found = true
-            DebugLog("Replaced placeholder", i)
+            DebugLog("替换占位符", i)
         end
 
         -- Try https version
@@ -871,7 +871,7 @@ local function ReconstructMessage(segments, translatedText)
             if startPos then
                 workText = string.sub(workText, 1, startPos - 1) .. linkContents[i] .. string.sub(workText, endPos + 1)
                 found = true
-                DebugLog("Replaced https placeholder", i)
+                DebugLog("替换HTTPS占位符", i)
             end
         end
 
@@ -893,7 +893,7 @@ local function ReconstructMessage(segments, translatedText)
         end
 
         if not found then
-            DebugLog("Placeholder not found:", placeholder)
+            DebugLog("未找到占位符：", placeholder)
             -- Append the link at the end as fallback
             workText = workText .. " " .. linkContents[i]
         end
@@ -948,19 +948,19 @@ end
 -- Per-event display tags for the [WT-X] prefix shown with each translation.
 -- CHAT_MSG_CHANNEL is handled dynamically from arg4 (channel name string).
 local EVENT_CHANNEL_TAGS = {
-    CHAT_MSG_SAY                  = "WT-Say",
-    CHAT_MSG_YELL                 = "WT-Yell",
-    CHAT_MSG_WHISPER              = "WT-Whisper",
-    CHAT_MSG_WHISPER_INFORM       = "WT-Whisper",
-    CHAT_MSG_PARTY                = "WT-Party",
-    CHAT_MSG_GUILD                = "WT-Guild",
-    CHAT_MSG_OFFICER              = "WT-Officer",
-    CHAT_MSG_RAID                 = "WT-Raid",
-    CHAT_MSG_RAID_LEADER          = "WT-Raid",
-    CHAT_MSG_RAID_WARNING         = "WT-Raid",
-    CHAT_MSG_BATTLEGROUND         = "WT-BG",
-    CHAT_MSG_BATTLEGROUND_LEADER  = "WT-BG",
-    CHAT_MSG_HARDCORE             = "WT-Hardcore",
+    CHAT_MSG_SAY                  = "翻译-说",
+    CHAT_MSG_YELL                 = "翻译-喊",
+    CHAT_MSG_WHISPER              = "翻译-密语",
+    CHAT_MSG_WHISPER_INFORM       = "翻译-密语",
+    CHAT_MSG_PARTY                = "翻译-小队",
+    CHAT_MSG_GUILD                = "翻译-公会",
+    CHAT_MSG_OFFICER              = "翻译-官员",
+    CHAT_MSG_RAID                 = "翻译-团队",
+    CHAT_MSG_RAID_LEADER          = "翻译-团队",
+    CHAT_MSG_RAID_WARNING         = "翻译-团队",
+    CHAT_MSG_BATTLEGROUND         = "翻译-战场",
+    CHAT_MSG_BATTLEGROUND_LEADER  = "翻译-战场",
+    CHAT_MSG_HARDCORE             = "翻译-硬核",
 }
 
 -- Returns the [WT-X] tag string for a given event.
@@ -972,11 +972,11 @@ local function GetChannelTag(event, channelStr)
         if channelStr and channelStr ~= "" then
             -- Strip leading "N. " number prefix that WoW prepends to channel names
             local name = string.gsub(channelStr, "^%d+%.%s*", "")
-            if name and name ~= "" then return "WT-" .. name end
+            if name and name ~= "" then return "翻译-" .. name end
         end
-        return "WT-Channel"
+        return "翻译-频道"
     end
-    return "WT"
+    return "翻译"
 end
 
 -- ============================================================================
@@ -1091,7 +1091,7 @@ local function BuildSenderPrefix(rawName, resolvedName, channel, guildDisplay)
     end
     if channel then
         if isTranslated then
-            -- ShaguTweaks chat-levels/social-colors patterns require [rawName]
+            -- ShaguTweaks chat-levels/social-colors pattern requires [rawName]
             -- in the display to match, which breaks when we replace it. Instead,
             -- build class color and level ourselves: read level from ShaguTweaks'
             -- player cache (ShaguTweaks_cache.players[name].level) with UnitLevel
@@ -1661,7 +1661,7 @@ local function UpdateTooltipPlayerNames(tooltip)
 
                 local guildLine = ""
                 if hasGuild then
-                    -- Echo check: Google Translate sometimes returns source text unchanged
+                    -- Echo check: bing Translate sometimes returns source text unchanged
                     local guildTranslated = rawGuild and (guildDisplay ~= rawGuild)
                     if guildTranslated then
                         if gColor ~= "" then
@@ -1986,7 +1986,7 @@ local function ResetNameplatePlateState(plate)
 end
 
 -- ============================================================================
--- OOC HEALTHBAR HIDE + GUILD DISPLAY (ShaguPlates only)
+-- 非战斗状态隐藏血条 + 显示公会名（仅支持 ShaguPlates）
 -- ============================================================================
 
 local function IsNameplateUnitInCombat(plate)
@@ -1995,8 +1995,7 @@ local function IsNameplateUnitInCombat(plate)
     return ok and c
 end
 
--- ShaguPlates parents overlay.name under overlay.health; detach so the name
--- remains visible when the health bar is hidden out of combat.
+-- ShaguPlates 默认把名字放在血条下面；脱离战斗时分离结构，让名字保持显示
 local function EnsureOverlayNameDetached(parent)
     local overlay = GetNameplateOverlay(parent)
     if not overlay or not overlay.name then return end
@@ -2015,7 +2014,7 @@ local function EnsureOverlayNameDetached(parent)
     parent.wtNameDetachedForOOC = true
 end
 
--- Health bar, its backdrop, and level text — hidden together out of combat.
+-- 血条、背景、等级文字 —— 非战斗时统一隐藏
 local function CollectNameplateClutterFrames(parent)
     local frames = {}
     local function add(f)
@@ -2040,7 +2039,7 @@ local function SetNameplateClutterVisible(plate, visible)
 end
 
 -- ============================================================================
--- OOC GUILD DISPLAY (ShaguPlates only)
+-- 非战斗状态显示公会名（仅支持 ShaguPlates）
 -- ============================================================================
 
 local wtNameplateGuildByPlayer = {}
@@ -2249,21 +2248,19 @@ local function HookNameplates()
     HookShaguNameplates()
     HookShaguPlatesNameplates()
 end
--- Forward reference: allows WoWTranslate_SetTranslateNameplates to hook ShaguPlates
--- when the feature is toggled on mid-session.
+-- 提前引用：允许在游戏中开启翻译功能时自动挂钩 ShaguPlates
 wtNameplateScanStart = HookNameplates
 
 -- ============================================================================
--- GROUP FINDER (LFT) TRANSLATION
+-- 组队查找器（LFT）自动翻译
 -- ============================================================================
--- Translates the title and description of each visible LFT group entry.
--- Hooks LFT_UpdateGroupsList (post-render); requires LFT addon to be loaded.
--- Gated on WoWTranslateDB.translateGroupFinder.
+-- 翻译每个可见队伍条目的标题和描述
+-- 挂钩 LFT_UpdateGroupsList；需要 LFT 插件已加载
+-- 由 WoWTranslateDB.translateGroupFinder 控制开关
 
 local lftHooked = false
 
--- After async translation resolves, find the entry frame still displaying
--- the same group and update the text widget.
+-- 异步翻译完成后，找到仍在显示的条目并更新文字
 local function LFT_ApplyTranslation(entryId, isTitle, translated)
     for i = 1, 8 do
         local btn = _G["LFTFrameGroupEntry"..i]
@@ -2280,14 +2277,14 @@ local function LFT_TranslateField(entryId, rawText, isTitle)
     local detectedLang = DetectSourceLanguage(rawText)
     if not detectedLang then return end
 
-    -- Cache hit: instant, no API call needed
+    -- 读取缓存：立即显示，不请求API
     local cached, found = WoWTranslate_CacheGet(rawText)
     if found then
         LFT_ApplyTranslation(entryId, isTitle, cached)
         return
     end
 
-    -- Exact glossary hit: full-text WoW slang match
+    -- 术语库完全匹配
     if WoWTranslate_CheckGlossaryExact then
         local glossaryResult = WoWTranslate_CheckGlossaryExact(rawText)
         if glossaryResult then
@@ -2297,7 +2294,7 @@ local function LFT_TranslateField(entryId, rawText, isTitle)
         end
     end
 
-    -- Partial glossary preprocessing then API translation
+    -- 术语库部分替换后再翻译
     local textToTranslate = rawText
     if WoWTranslate_CheckGlossaryPartial then
         local partial = WoWTranslate_CheckGlossaryPartial(rawText)
@@ -2343,7 +2340,7 @@ function WoWTranslate_SetTranslateGroupFinder(enabled)
     end
     if enabled then
         HookLFT()
-        -- Refresh visible entries if LFT is open
+        -- 如果LFT窗口已打开，立即刷新
         if LFTFrame and LFTFrame:IsShown() then
             LFT_ScanVisibleEntries()
         end
@@ -2485,16 +2482,16 @@ local function HookTooltips()
 end
 
 -- ============================================================================
--- OUTGOING TOGGLE BUTTON
+-- 发送消息翻译开关按钮
 -- ============================================================================
 local outgoingButton = nil
 
 local function UpdateOutgoingButton()
     if not outgoingButton then return end
     if WoWTranslateDB and WoWTranslateDB.outgoingEnabled then
-        outgoingButton:SetText("|cFF00FF00OUT:ON|r")
+        outgoingButton:SetText("|cFF00FF00发送:开启|r")
     else
-        outgoingButton:SetText("|cFFFF4444OUT:OFF|r")
+        outgoingButton:SetText("|cFFFF4444发送:关闭|r")
     end
 end
 
@@ -2524,7 +2521,7 @@ local function CreateOutgoingButton()
     f.label = label
 
     f:SetScript("OnMouseDown", function()
-        -- Toggle on click release (OnMouseUp handles it); just visual feedback.
+        -- 点击仅做视觉反馈，松开时切换状态
     end)
     f:SetScript("OnMouseUp", function()
         if arg1 == "LeftButton" then
@@ -2542,7 +2539,7 @@ local function CreateOutgoingButton()
         end
     end)
 
-    -- Expose SetText on the frame so UpdateOutgoingButton works cleanly.
+    -- 暴露 SetText 方法，方便统一更新按钮文字
     function f:SetText(text) self.label:SetText(text) end
 
     if WoWTranslateDB and WoWTranslateDB.showOutgoingButton == false then
@@ -2563,9 +2560,9 @@ local function ApplyOutgoingButtonVisibility()
 end
 
 -- ============================================================================
--- force=true clears WoWTranslateHooked so all frames are re-hooked (used by /wt reset).
--- origScript is saved on the frame so re-hooking always wraps the real WoW handler,
--- never a previously-installed WoWTranslate wrapper (no double-wrapping).
+-- force=true 会清除 WoWTranslateHooked 标记，让所有框架重新挂钩（用于 /wt reset）。
+-- origScript 会保存在框架上，确保重新挂钩时始终包裹原始的魔兽处理函数，
+-- 不会重复包裹 WoWTranslate 自身的包装函数。
 local function HookChatFrames(force)
     if not originalAddMessage and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         originalAddMessage = DEFAULT_CHAT_FRAME.AddMessage
@@ -2579,55 +2576,44 @@ local function HookChatFrames(force)
             if force then frame.WoWTranslateHooked = false end
 
             if not frame.WoWTranslateHooked then
-                -- On re-hook use the saved original so we never wrap our own wrapper
+                -- 重新挂钩时使用保存的原始脚本，避免嵌套包裹
                 local origScript = frame.WoWTranslate_OrigScript or frame:GetScript("OnEvent")
                 if not origScript then
-                    DebugLog("No OnEvent script on", frameName)
+                    DebugLog("框架无 OnEvent 脚本", frameName)
                 else
-                    frame.WoWTranslate_OrigScript = origScript  -- persist for safe re-hook
+                    frame.WoWTranslate_OrigScript = origScript  -- 持久保存，用于安全重挂钩
                     frame.WoWTranslateHooked = true
 
                     frame:SetScript("OnEvent", function()
                         hookCallCount = hookCallCount + 1
 
-                        -- Capture event globals before origScript may clobber them
+                        -- 在原始脚本覆盖全局变量前，先保存事件参数
                         local capturedEvent = event
                         local capturedArg1  = arg1
                         local capturedArg2  = arg2
-                        local capturedArg4  = arg4  -- channel name string for CHAT_MSG_CHANNEL
+                        local capturedArg4  = arg4  -- CHAT_MSG_CHANNEL 的频道名称
                         local capturedThis  = this
 
-                        -- Wrap in pcall: an unhandled Lua error in a SetScript handler
-                        -- silently disables it in WoW 1.12. Capture the error for debug.
+                        -- 使用 pcall 包裹：魔兽 1.12 中，SetScript 处理函数内的未捕获错误会静默禁用它
                         local _ok, _err = pcall(function()
-                            -- Let WoW's own filter decide: if origScript didn't add a message
-                            -- to this frame (filtered out), don't add a translation either.
-							-- Primary: shadow AddMessage on the frame instance to detect the call
-							-- directly — this works even when the ring-buffer is full (128 msgs),
-							-- where GetNumMessages() alone cannot distinguish "shown" from "filtered".
-							-- Fallback: if the shadow was never triggered (e.g. WoW build ignores
- 							-- instance-table shadows for built-in methods), use GetNumMessages with
-							-- the pre-fix < 128 heuristic so we degrade gracefully.
+                            -- 由魔兽自带过滤器判断：如果原始脚本没有在该框架显示消息（被过滤），则不显示翻译
                             local msgsBefore = capturedThis:GetNumMessages()
                             local messageShownInFrame = false
                             local origFrameAddMsg = capturedThis.AddMessage
-                            -- replaceMode: args from the intercepted AddMessage call; nil = not captured.
                             local pendingArgs = nil
 
                             capturedThis.AddMessage = function(f, a, b, c, d, e, g)
                                 messageShownInFrame = true
                                 capturedThis.AddMessage = origFrameAddMsg
                                 if WoWTranslateDB and WoWTranslateDB.replaceMode then
-                                    -- Suppress the original; hold args so we can show the original
-                                    -- on early-exit paths or show the translation on success.
+                                    -- 替换模式：隐藏原始消息，保存参数
                                     pendingArgs = {f=f, a=a, b=b, c=c, d=d, e=e, g=g}
                                 else
                                     origFrameAddMsg(f, a, b, c, d, e, g)
                                 end
                             end
 
-                            -- Shows the original message if it was suppressed and translation
-                            -- was not produced (early exit, DLL error, etc.).
+                            -- 翻译失败时，恢复显示原始消息
                             local function FlushOriginal()
                                 if pendingArgs then
                                     origFrameAddMsg(pendingArgs.f, pendingArgs.a, pendingArgs.b,
@@ -2638,18 +2624,17 @@ local function HookChatFrames(force)
                             end
 
                             local origOk, origErr = pcall(origScript)
-							
-                            -- Always restore; never leave our wrapper or a nil in place.
+                            
+                            -- 无论如何都恢复原始 AddMessage
                             capturedThis.AddMessage = origFrameAddMsg
 
                             if not origOk then
-                                DebugLog("origScript error:", tostring(origErr))
+                                DebugLog("原始脚本错误:", tostring(origErr))
                                 FlushOriginal(); return
                             end
 
                             if not messageShownInFrame then
-                                -- Shadow either worked (message filtered) or wasn't triggered.
-                                -- Use GetNumMessages as fallback — ambiguous only at 128.
+                                -- 阴影检测未触发，使用消息数量作为降级方案
                                 local msgsAfter = capturedThis:GetNumMessages()
                                 if msgsAfter < msgsBefore
                                     or (msgsAfter == msgsBefore and msgsBefore < 128)then
@@ -2679,9 +2664,7 @@ local function HookChatFrames(force)
 
                             if not capturedArg1 or capturedArg1 == "" then FlushOriginal(); return end
                             if string.sub(capturedArg1, 1, 1) == "#" then FlushOriginal(); return end
-                            -- Strip any WoWTranslate prefix that another addon user prepended.
-                            -- All prefix variants are [... WoWTranslate ...] — strip up to the
-                            -- closing ] so the body is still translated normally.
+                            -- 移除其他玩家发送的 WoWTranslate 前缀
                             do
                                 local p = string.find(capturedArg1, "WoWTranslate", 1, true)
                                 if p and p <= 50 then
@@ -2694,39 +2677,29 @@ local function HookChatFrames(force)
                             end
 
                             local detectedLang = DetectSourceLanguage(capturedArg1)
-                            DebugLog("Event:", capturedEvent, "lang=", tostring(detectedLang), "msg=", string.sub(capturedArg1, 1, 30))
+                            DebugLog("事件:", capturedEvent, "语言=", tostring(detectedLang), "消息=", string.sub(capturedArg1, 1, 30))
                             if not detectedLang then FlushOriginal(); return end
-                            -- Skip no-op translations (e.g. zh→zh when Chinese player sets target=zh).
-                            -- Without this, the ZH→EN glossary fires on Chinese text, inserts English,
-                            -- and the result is shown in English or sent to the DLL as zh→zh garbage.
+                            -- 跳过无意义翻译（如中文→中文）
                             local incomingTargetLang = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
                             if detectedLang == incomingTargetLang then FlushOriginal(); return end
 
-                            -- Resolved name/guild; set by ResolveNamesAndPost before BuildWTMsg.
-                            -- Default to rawName so BuildSenderPrefix matches old behavior when
-                            -- translatePlayerNames/translateGuildNames are both off.
                             local resolvedSenderName = capturedArg2
                             local resolvedGuildName  = nil
 
                             local channelTag   = GetChannelTag(capturedEvent, capturedArg4)
                             local msgColor     = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
                             local chanColorHex = GetChatTypeColorHex(capturedEvent, capturedArg4)
-                            -- Channel name part of the tag (everything after "WT-"), or nil for bare "WT".
                             local chanNamePart = string.sub(channelTag, 1, 3) == "WT-" and string.sub(channelTag, 4) or nil
 
-                            -- WIM: when WIM suppresses a whisper from chat frames, we post
-                            -- the translation directly to the WIM window instead.
                             local wimWhisperUser = nil
 
                             local function BuildWTMsg(body)
-                                -- Prefix: [WT- in cyan, channel name in the native channel color.
                                 local prefix
                                 if chanColorHex and chanNamePart then
                                     prefix = "|cFF00FFFF[WT-|r|cFF" .. chanColorHex .. chanNamePart .. "]|r"
                                 else
                                     prefix = "|cFF00FFFF[" .. channelTag .. "]|r"
                                 end
-                                -- Body: use channel color when "follow" is on, else custom or default.
                                 local bodyHex = msgColor
                                 if WoWTranslateDB and WoWTranslateDB.translationColorFollow then
                                     bodyHex = chanColorHex or ""
@@ -2736,9 +2709,6 @@ local function HookChatFrames(force)
                                 return prefix .. " " .. sp .. displayBody
                             end
 
-                            -- Resolves player display name (async when translatePlayerNames is on,
-                            -- synchronous no-op when off), then calls postFn with the built WTMsg.
-                            -- Guild translation is tooltip-only; chat lines never show guild.
                             local function ResolveNamesAndPost(body, postFn)
                                 ResolvePlayerDisplayName(capturedArg2, function(dName)
                                     resolvedSenderName = dName
@@ -2755,31 +2725,15 @@ local function HookChatFrames(force)
                                 end
                             end
 
-                            -- Split into text and hyperlink segments.
-                            -- Chinese bytes in link display names (e.g. [剑]) are NOT
-                            -- translatable plain text — HasTranslatableContent checks only
-                            -- text segments. Pure-link messages are skipped here, which
-                            -- also prevents the raw | pipe codes from breaking DLL parsing.
+                            -- 分割文本与超链接，只翻译纯文本部分
                             local segments = SplitIntoSegments(capturedArg1)
                             if not HasTranslatableContent(segments) then FlushOriginal(); return end
 
-                            -- Build text with hyperlinks as URL placeholders so the DLL
-                            -- never sees WoW pipe-codes in the text it sends to Google.
                             local plainText = BuildTranslatableText(segments)
 
-                            -- Register this frame as a recipient for the translation of
-                            -- this message.  WoW fires each chat frame's OnEvent in turn
-                            -- for the same message, so capturedThis differs per iteration.
-                            -- Dedup lets only the first frame reach the DLL; we collect all
-                            -- frames here so the async callback posts to every relevant tab.
-                            -- Only register when the AddMessage interception confirmed the
-                            -- original message actually appeared in this frame.  Frames that
-                            -- filtered the message (channel disabled, tab not showing it)
-                            -- must not receive the translation either.
+                            -- 为该消息注册接收翻译的聊天框架
                             if not messageShownInFrame then
-                                -- WIM compatibility: WIM suppresses whispers from standard chat frames
-                                -- (supressWisps=true is WIM's default). Detect this and route the
-                                -- translation to the WIM window instead of a chat frame AddMessage.
+                                -- WIM 兼容：WIM 会隐藏密语，直接发送到 WIM 窗口
                                 if (capturedEvent == "CHAT_MSG_WHISPER" or capturedEvent == "CHAT_MSG_WHISPER_INFORM") and
                                    type(WIM_Data) == "table" and WIM_Data.enableWIM and
                                    WIM_Data.supressWisps ~= false and
@@ -2797,9 +2751,10 @@ local function HookChatFrames(force)
                                 frameTranslationTargets[capturedArg1][capturedThis] = true
                             end
 
+                            -- 读取缓存
                             local cached, found = WoWTranslate_CacheGet(capturedArg1)
                             if found then
-                                DebugLog("Cache hit")
+                                DebugLog("缓存命中")
                                 local reconstructed = ReconstructMessage(segments, cached)
                                 frameTranslationTargets[capturedArg1] = nil
                                 ResolveNamesAndPost(reconstructed, PostWTMsg)
@@ -2808,11 +2763,11 @@ local function HookChatFrames(force)
 
                             local textToTranslate = plainText
                             if detectedLang == "en" then
-                                -- English source: apply EN→ZH outgoing glossary
+                                -- 英文来源：应用外向词汇表（英→中）
                                 if WoWTranslate_CheckOutGlossaryExact then
                                     local r = WoWTranslate_CheckOutGlossaryExact(plainText)
                                     if r then
-                                        DebugLog("Outgoing glossary exact (incoming EN):", r)
+                                        DebugLog("外向词汇表精确匹配（英文输入）:", r)
                                         WoWTranslate_CacheSave(capturedArg1, r)
                                         frameTranslationTargets[capturedArg1] = nil
                                         ResolveNamesAndPost(ReconstructMessage(segments, r), PostWTMsg)
@@ -2822,18 +2777,18 @@ local function HookChatFrames(force)
                                 if WoWTranslate_CheckOutGlossaryPartial then
                                     local r = WoWTranslate_CheckOutGlossaryPartial(plainText)
                                     if r then
-                                        DebugLog("Outgoing glossary partial (incoming EN):", r)
+                                        DebugLog("外向词汇表部分匹配（英文输入）:", r)
                                         textToTranslate = r
                                     end
                                 end
                             else
-                                -- Preprocess: currency (XG = gold, XY = silver), 88 = bye, 110 = patrol
+                                -- 预处理：货币、网络用语
                                 plainText = PreprocessIncoming(plainText)
                                 textToTranslate = plainText
-                                -- CJK/Russian source: apply ZH→EN incoming glossary
+                                -- 应用内向词汇表（中→英）
                                 local glossaryResult = WoWTranslate_CheckGlossaryExact(plainText)
                                 if glossaryResult then
-                                    DebugLog("Glossary exact:", glossaryResult)
+                                    DebugLog("词汇表精确匹配:", glossaryResult)
                                     WoWTranslate_CacheSave(capturedArg1, glossaryResult)
                                     frameTranslationTargets[capturedArg1] = nil
                                     ResolveNamesAndPost(ReconstructMessage(segments, glossaryResult), PostWTMsg)
@@ -2842,32 +2797,25 @@ local function HookChatFrames(force)
                                 local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
                                 if partialResult then
                                     if not DetectSourceLanguage(partialResult) then
-                                        DebugLog("Glossary full partial:", partialResult)
+                                        DebugLog("词汇表完全处理:", partialResult)
                                         WoWTranslate_CacheSave(capturedArg1, partialResult)
                                         frameTranslationTargets[capturedArg1] = nil
                                         ResolveNamesAndPost(ReconstructMessage(segments, partialResult), PostWTMsg)
                                         return
                                     end
                                     textToTranslate = partialResult
-                                    DebugLog("Glossary pre-processed, sending to API")
+                                    DebugLog("词汇表预处理完成，请求API")
                                 end
                             end
 
                             if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
                                 if not dllWarnShown then
                                     dllWarnShown = true
-                                    capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] DLL not connected - run /wt status|r")
+                                    capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] 翻译核心未加载 - 输入 /wt status 查看|r")
                                 end
                                 FlushOriginal(); return
                             end
 
-                            -- replaceMode: capture original args before the API call, but only
-                            -- register the 30s safety-net entry for frames whose callback will
-                            -- actually fire. WoW fires every chat frame's OnEvent for the same
-                            -- message; the API deduplicates (returns false for frames 2-N).
-                            -- Those frames get the translation via frameTranslationTargets.
-                            -- Storing a safety-net entry for deduplicated frames causes the
-                            -- original to reappear 30s later even when translation succeeded.
                             local replacePendingKey = nil
                             local replacePendingData = nil
                             if pendingArgs then
@@ -2883,17 +2831,13 @@ local function HookChatFrames(force)
 
                             local apiQueued = WoWTranslate_API.Translate(textToTranslate, function(translation, err)
                                 if translation and translation ~= "" then
-                                    DebugLog("Translation:", string.sub(translation, 1, 50))
+                                    DebugLog("翻译结果:", string.sub(translation, 1, 50))
                                     translationErrWarnShown = false
                                     WoWTranslate_CacheSave(capturedArg1, translation)
                                     local reconstructed = ReconstructMessage(segments, translation)
-                                    -- replaceMode: original was suppressed; clear safety net entry.
                                     if replacePendingKey then
                                         pendingMessages[replacePendingKey] = nil
                                     end
-                                    -- Post to every frame that displayed the original message.
-                                    -- Capture targets before async name resolution so the table
-                                    -- is not modified by concurrent messages.
                                     local targets = frameTranslationTargets[capturedArg1]
                                     frameTranslationTargets[capturedArg1] = nil
                                     ResolveNamesAndPost(reconstructed, function(wtMsg)
@@ -2908,9 +2852,8 @@ local function HookChatFrames(force)
                                         end
                                     end)
                                 else
-                                    DebugLog("Translation error:", tostring(err))
+                                    DebugLog("翻译错误:", tostring(err))
                                     frameTranslationTargets[capturedArg1] = nil
-                                    -- replaceMode: translation failed — show original immediately.
                                     if replacePendingKey then
                                         local rp = pendingMessages[replacePendingKey]
                                         if rp then
@@ -2921,24 +2864,21 @@ local function HookChatFrames(force)
                                     end
                                     if not translationErrWarnShown then
                                         translationErrWarnShown = true
-                                        capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] Translation failing (" .. tostring(err) .. ") - try /wt reset|r")
+                                        capturedThis:AddMessage("|cFFFFFF00[WoWTranslate] 翻译失败 (" .. tostring(err) .. ") - 请尝试 /wt reset|r")
                                     end
                                 end
                             end, detectedLang)
-                            -- Only store the safety-net entry when this frame's callback will
-                            -- fire (apiQueued=true). Deduplicated frames (false) will receive
-                            -- the translation via frameTranslationTargets when the first frame's
-                            -- callback fires, so their suppressed original can be discarded.
+                            
                             if apiQueued and replacePendingData then
                                 replacePendingKey = "r|" .. tostring(capturedThis) .. "|" .. capturedArg1
                                 replacePendingData.timestamp = GetTime()
                                 pendingMessages[replacePendingKey] = replacePendingData
                             end
-                        end)  -- end pcall
-                        if not _ok then DebugLog("OnEvent hook error:", tostring(_err)) end
+                        end)
+                        if not _ok then DebugLog("OnEvent 挂钩错误:", tostring(_err)) end
                     end)
 
-                    DebugLog("Hooked", frameName, "via SetScript")
+                    DebugLog("已挂钩聊天框架", frameName)
                 end
             end
 
@@ -2946,11 +2886,12 @@ local function HookChatFrames(force)
     end
 end
 
+-- 清理超时未翻译的消息，恢复显示原文
 local function CleanupPendingMessages()
     local now = GetTime()
     for msgId, pending in pairs(pendingMessages) do
         if now - pending.timestamp > 30 then
-            DebugLog("Message timed out:", msgId)
+            DebugLog("消息超时:", msgId)
             pending.originalAddMessage(pending.frame, pending.originalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
             pendingMessages[msgId] = nil
         end
@@ -2958,17 +2899,17 @@ local function CleanupPendingMessages()
 end
 
 -- ============================================================================
--- OUTGOING TRANSLATION (English -> Chinese)
+-- 发送消息翻译（英文 → 中文）
 -- ============================================================================
 
--- Clean up queued outgoing messages after timeout
+-- 清理超时的发送队列
 local function CleanupOutgoingQueue()
     local now = GetTime()
     for queueId, item in pairs(outgoingQueue) do
         if now - item.timestamp > 30 then
-            DebugLog("Outgoing message timed out:", queueId)
+            DebugLog("发送消息超时:", queueId)
             if originalAddMessage then
-                originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] Translation timed out, sending original|r")
+                originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] 翻译超时，发送原文|r")
             end
             originalSendChatMessage(item.originalMsg, item.chatType, item.language, item.channel)
             outgoingQueue[queueId] = nil
@@ -2976,33 +2917,31 @@ local function CleanupOutgoingQueue()
     end
 end
 
--- Hooked SendChatMessage for outgoing translation
+-- 挂钩发送消息函数，实现发送翻译
 local function HookedSendChatMessage(msg, chatType, language, channel)
-    -- Handle nil chatType (WoW 1.12 compatibility)
+    -- 兼容魔兽 1.12 空频道类型
     if not chatType then
-        DebugLog("chatType is nil, sending original")
+        DebugLog("chatType 为空，直接发送原文")
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip if outgoing disabled
+    -- 发送翻译未启用，直接发送
     if not WoWTranslateDB or not WoWTranslateDB.outgoingEnabled then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip translation while AFK
+    -- AFK 时不翻译
     if WoWTranslateDB.disableWhileAfk and playerIsAFK then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip if channel not enabled
+    -- 频道未启用发送翻译
     if not WoWTranslateDB.outgoingChannels then
-        DebugLog("Channel not enabled for outgoing:", chatType)
+        DebugLog("该频道未启用发送翻译:", chatType)
         return originalSendChatMessage(msg, chatType, language, channel)
     end
     local effectiveOutChannel = chatType
     if chatType == "CHANNEL" and channel then
-        -- GetChannelName(number) does not reliably return the name in WoW 1.12;
-        -- iterate GetChannelList() instead (returns id, name, id, name, ...).
         local list = {GetChannelList()}
         for i = 1, table.getn(list), 2 do
             if list[i] == channel then
@@ -3014,185 +2953,183 @@ local function HookedSendChatMessage(msg, chatType, language, channel)
         end
     end
     if not WoWTranslateDB.outgoingChannels[effectiveOutChannel] then
-        DebugLog("Channel not enabled for outgoing:", effectiveOutChannel)
+        DebugLog("该频道未启用发送翻译:", effectiveOutChannel)
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip empty messages
+    -- 空消息不处理
     if not msg or msg == "" then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip macro directives (#showtooltip, #show, etc.)
+    -- 跳过宏命令
     if string.sub(msg, 1, 1) == "#" then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip dot-commands sent by addons (e.g. .server info from PizzaWorldBuffs)
+    -- 跳过插件命令
     if string.sub(msg, 1, 1) == "." then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip addon inter-communication messages (PizzaWorldBuffs, Atlas-CFM, etc.)
-    -- These follow the format: ADDONNAME:VERSION:DATA
+    -- 跳过插件内部通信消息
     if string.find(msg, "^[A-Za-z][A-Za-z0-9_]*:%d+:") then
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip if already contains target language (don't double-translate)
+    -- 已包含目标语言，不重复翻译
     if ContainsOutgoingTargetLanguage(msg) then
-        DebugLog("Message already contains target language, skipping outgoing translation")
+        DebugLog("消息已包含目标语言，跳过发送翻译")
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Skip if DLL not available
+    -- 翻译核心未加载
     if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
-        DebugLog("DLL not available for outgoing translation")
+        DebugLog("翻译核心未加载，无法发送翻译")
         return originalSendChatMessage(msg, chatType, language, channel)
     end
 
-    -- Split message into segments (text and hyperlinks) to preserve links
+    -- 分割消息，保留超链接
     local segments = SplitIntoSegments(msg)
-    DebugLog("Outgoing segments:", table.getn(segments))
+    DebugLog("发送段数:", table.getn(segments))
 
-    -- Build text to translate (hyperlinks replaced with URL placeholders)
+    -- 构建待翻译文本
     local textToTranslate = BuildTranslatableText(segments)
-    DebugLog("Outgoing to translate:", textToTranslate)
+    DebugLog("待发送翻译文本:", textToTranslate)
 
-    -- Apply the glossary that matches the outgoing source language direction.
+    -- 应用对应方向的词汇表
     local outFromLang = WoWTranslateDB.outgoingFromLang or "en"
     if outFromLang == "en" then
-        -- Convert EN currency notation to CN before glossary/API (Xg→XG, Xs→XY)
+        -- 英文→中文：货币格式转换 + 外向词汇表
         textToTranslate = PreprocessOutgoing(textToTranslate)
-        -- EN→ZH: apply EN→ZH outgoing glossary
         if WoWTranslate_CheckOutGlossaryExact then
             local glossaryResult = WoWTranslate_CheckOutGlossaryExact(textToTranslate)
             if not glossaryResult and WoWTranslate_CheckOutGlossaryPartial then
                 glossaryResult = WoWTranslate_CheckOutGlossaryPartial(textToTranslate)
             end
             if glossaryResult then
-                DebugLog("Outgoing glossary (EN→ZH) applied:", glossaryResult)
+                DebugLog("已应用外向词汇表（英→中）:", glossaryResult)
                 textToTranslate = glossaryResult
             end
         end
     else
-        -- ZH→EN (or other non-English source): apply ZH→EN incoming glossary
+        -- 中文→英文：应用内向词汇表
         if WoWTranslate_CheckGlossaryExact then
             local glossaryResult = WoWTranslate_CheckGlossaryExact(textToTranslate)
             if not glossaryResult and WoWTranslate_CheckGlossaryPartial then
                 glossaryResult = WoWTranslate_CheckGlossaryPartial(textToTranslate)
             end
             if glossaryResult then
-                DebugLog("Outgoing glossary (ZH→EN) applied:", glossaryResult)
+                DebugLog("已应用外向词汇表（中→英）:", glossaryResult)
                 textToTranslate = glossaryResult
             end
         end
     end
 
-    -- Queue for translation
+    -- 加入翻译队列
     outgoingCounter = outgoingCounter + 1
     local queueId = tostring(outgoingCounter)
 
     outgoingQueue[queueId] = {
         originalMsg = msg,
-        segments = segments,  -- Store segments for reconstruction
+        segments = segments,
         chatType = chatType,
         language = language,
         channel = channel,
         timestamp = GetTime()
     }
 
-    -- Show local feedback
-    if originalAddMessage then
-        originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFFFF00[WoWTranslate] Translating...|r")
-    end
-
-    DebugLog("Outgoing queued:", queueId, msg)
-
-    -- Request translation (send only the text portions, not hyperlinks)
-    WoWTranslate_API.TranslateOutgoing(textToTranslate, function(translation, err)
-        local queued = outgoingQueue[queueId]
-        if not queued then
-            DebugLog("Outgoing callback but queue item gone:", queueId)
-            return
-        end
-        outgoingQueue[queueId] = nil
-
-        if translation then
-            DebugLog("Outgoing translation received:", translation)
-
-            -- Reconstruct message with original hyperlinks
-            local reconstructed = ReconstructMessage(queued.segments, translation)
-            DebugLog("Outgoing reconstructed:", reconstructed)
-
-            -- Build message, optionally prepending the prefix
-            local finalMsg
-            if WoWTranslateDB.outgoingPrefixEnabled then
-                local userPrefix = WoWTranslateDB.outgoingPrefix or DEFAULT_PREFIX
-                local prefix
-                if userPrefix == DEFAULT_PREFIX then
-                    local targetLang = WoWTranslateDB.outgoingToLang or "zh"
-                    prefix = TRANSLATED_PREFIXES[targetLang] or userPrefix
-                else
-                    prefix = userPrefix
-                end
-                finalMsg = prefix .. " " .. reconstructed
-            else
-                finalMsg = reconstructed
-            end
-
-            -- Truncate if over 255 bytes (WoW chat limit)
-            if string.len(finalMsg) > 255 then
-                finalMsg = string.sub(finalMsg, 1, 252) .. "..."
-            end
-
-            originalSendChatMessage(finalMsg, queued.chatType, queued.language, queued.channel)
-
-            if originalAddMessage then
-                originalAddMessage(DEFAULT_CHAT_FRAME, "|cFF00FF00[WoWTranslate] Sent:|r " .. finalMsg)
-            end
-        else
-            -- Translation failed - send original
-            DebugLog("Outgoing translation failed:", err)
-            if originalAddMessage then
-                originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] Translation failed, sending original|r")
-            end
-            originalSendChatMessage(queued.originalMsg, queued.chatType, queued.language, queued.channel)
-        end
-    end)
+-- 显示本地提示
+if originalAddMessage then
+    originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFFFF00[WoWTranslate] 正在翻译...|r")
 end
 
--- Track if hook is installed (for diagnostics)
+DebugLog("发送消息已加入队列:", queueId, msg)
+
+-- 请求翻译（仅发送文本部分，不包含超链接）
+WoWTranslate_API.TranslateOutgoing(textToTranslate, function(translation, err)
+    local queued = outgoingQueue[queueId]
+    if not queued then
+        DebugLog("发送回调：队列项已消失:", queueId)
+        return
+    end
+    outgoingQueue[queueId] = nil
+
+    if translation then
+        DebugLog("收到发送翻译结果:", translation)
+
+        -- 结合原始超链接重建消息
+        local reconstructed = ReconstructMessage(queued.segments, translation)
+        DebugLog("发送消息重建完成:", reconstructed)
+
+        -- 构建最终消息，可选添加前缀
+        local finalMsg
+        if WoWTranslateDB.outgoingPrefixEnabled then
+            local userPrefix = WoWTranslateDB.outgoingPrefix or DEFAULT_PREFIX
+            local prefix
+            if userPrefix == DEFAULT_PREFIX then
+                local targetLang = WoWTranslateDB.outgoingToLang or "zh"
+                prefix = TRANSLATED_PREFIXES[targetLang] or userPrefix
+            else
+                prefix = userPrefix
+            end
+            finalMsg = prefix .. " " .. reconstructed
+        else
+            finalMsg = reconstructed
+        end
+
+        -- 超过255字节自动截断（魔兽聊天限制）
+        if string.len(finalMsg) > 255 then
+            finalMsg = string.sub(finalMsg, 1, 252) .. "..."
+        end
+
+        originalSendChatMessage(finalMsg, queued.chatType, queued.language, queued.channel)
+
+        if originalAddMessage then
+            originalAddMessage(DEFAULT_CHAT_FRAME, "|cFF00FF00[WoWTranslate] 已发送:|r " .. finalMsg)
+        end
+    else
+        -- 翻译失败，发送原文
+        DebugLog("发送翻译失败:", err)
+        if originalAddMessage then
+            originalAddMessage(DEFAULT_CHAT_FRAME, "|cFFFF0000[WoWTranslate] 翻译失败，已发送原文|r")
+        end
+        originalSendChatMessage(queued.originalMsg, queued.chatType, queued.language, queued.channel)
+    end
+end)
+end
+
+-- 记录挂钩状态（用于诊断）
 local outgoingHookInstalled = false
 
--- Install the outgoing message hook
+-- 安装发送消息挂钩
 local function InstallOutgoingHook()
     if SendChatMessage ~= HookedSendChatMessage then
-        DebugLog("Installing outgoing SendChatMessage hook")
+        DebugLog("正在安装发送消息挂钩")
         SendChatMessage = HookedSendChatMessage
         outgoingHookInstalled = true
     end
 end
 
--- Remove the outgoing message hook
+-- 移除发送消息挂钩
 local function RemoveOutgoingHook()
     if SendChatMessage == HookedSendChatMessage then
-        DebugLog("Removing outgoing SendChatMessage hook")
+        DebugLog("正在移除发送消息挂钩")
         SendChatMessage = originalSendChatMessage
         outgoingHookInstalled = false
     end
 end
 
--- Check if hook is active (for diagnostics)
+-- 检查挂钩是否激活（用于诊断）
 local function IsOutgoingHookActive()
     return outgoingHookInstalled and SendChatMessage == HookedSendChatMessage
 end
 
 -- ============================================================================
--- GLOBAL FUNCTIONS FOR CONFIG UI
+-- 设置界面全局函数
 -- ============================================================================
 
--- Toggle outgoing translation (called from config UI and outgoing button)
+-- 切换发送翻译（设置界面/按钮调用）
 function WoWTranslate_SetOutgoingEnabled(enabled)
     if enabled then
         WoWTranslateDB.outgoingEnabled = true
@@ -3209,12 +3146,12 @@ function WoWTranslate_SetOutgoingButtonVisible(enabled)
     ApplyOutgoingButtonVisibility()
 end
 
--- Toggle incoming translation (called from config UI)
+-- 切换接收翻译（设置界面调用）
 function WoWTranslate_SetIncomingEnabled(enabled)
     WoWTranslateDB.enabled = enabled
 end
 
--- Set outgoing channel enabled state (called from config UI)
+-- 设置发送频道启用状态（设置界面调用）
 function WoWTranslate_SetChannelEnabled(channel, enabled)
     if not WoWTranslateDB.outgoingChannels then
         WoWTranslateDB.outgoingChannels = {}
@@ -3222,7 +3159,7 @@ function WoWTranslate_SetChannelEnabled(channel, enabled)
     WoWTranslateDB.outgoingChannels[channel] = enabled
 end
 
--- Set incoming channel enabled state (called from config UI)
+-- 设置接收频道启用状态（设置界面调用）
 function WoWTranslate_SetIncomingChannelEnabled(channel, enabled)
     if not WoWTranslateDB.incomingChannels then
         WoWTranslateDB.incomingChannels = {}
@@ -3231,7 +3168,7 @@ function WoWTranslate_SetIncomingChannelEnabled(channel, enabled)
 end
 
 -- ============================================================================
--- SLASH COMMANDS
+-- 斜杠命令
 -- ============================================================================
 SLASH_WOWTRANSLATE1 = "/wt"
 SLASH_WOWTRANSLATE2 = "/wowtranslate"
@@ -3247,16 +3184,16 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
 
     if cmd == "on" or cmd == "enable" then
         WoWTranslateDB.enabled = true
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Enabled|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] 已启用接收翻译|r")
 
     elseif cmd == "off" or cmd == "disable" then
         WoWTranslateDB.enabled = false
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Disabled|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 已禁用接收翻译|r")
 
     elseif cmd == "status" then
         local dllStatus = WoWTranslate_API.IsAvailable()
-            and "|cFF00FF00Connected|r"
-            or "|cFFFF0000Not loaded|r"
+            and "|cFF00FF00已连接|r"
+            or "|cFFFF0000未加载|r"
 
         local cacheStats = WoWTranslate_CacheStats()
         local glossaryCount = WoWTranslate_GetGlossaryCount()
@@ -3273,69 +3210,69 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         end
 
         local outgoingStatus = WoWTranslateDB.outgoingEnabled
-            and "|cFF00FF00ON|r"
-            or "|cFFFF0000OFF|r"
+            and "|cFF00FF00开启|r"
+            or "|cFFFF0000关闭|r"
 
         local hookStatus = IsOutgoingHookActive()
-            and "|cFF00FF00ACTIVE|r"
-            or "|cFFFF0000INACTIVE|r"
+            and "|cFF00FF00已激活|r"
+            or "|cFFFF0000未激活|r"
 
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Status:")
-        DEFAULT_CHAT_FRAME:AddMessage("  DLL: " .. dllStatus)
-        DEFAULT_CHAT_FRAME:AddMessage("  Incoming: " .. (WoWTranslateDB.enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
-        DEFAULT_CHAT_FRAME:AddMessage("  Outgoing: " .. outgoingStatus)
-        DEFAULT_CHAT_FRAME:AddMessage("  Outgoing Hook: " .. hookStatus)
-        DEFAULT_CHAT_FRAME:AddMessage("  Glossary entries: " .. glossaryCount)
-        DEFAULT_CHAT_FRAME:AddMessage("  Cached translations: " .. cacheStats.entries)
-        DEFAULT_CHAT_FRAME:AddMessage("  Cache hit rate: " .. string.format("%.1f%%", cacheStats.hitRate))
-        DEFAULT_CHAT_FRAME:AddMessage("  Pending API requests: " .. pendingCount)
-        DEFAULT_CHAT_FRAME:AddMessage("  Queued incoming: " .. queuedCount)
-        DEFAULT_CHAT_FRAME:AddMessage("  Queued outgoing: " .. outgoingQueuedCount)
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 状态信息:")
+        DEFAULT_CHAT_FRAME:AddMessage("  翻译核心: " .. dllStatus)
+        DEFAULT_CHAT_FRAME:AddMessage("  接收翻译: " .. (WoWTranslateDB.enabled and "|cFF00FF00开启|r" or "|cFFFF0000关闭|r"))
+        DEFAULT_CHAT_FRAME:AddMessage("  发送翻译: " .. outgoingStatus)
+        DEFAULT_CHAT_FRAME:AddMessage("  发送挂钩: " .. hookStatus)
+        DEFAULT_CHAT_FRAME:AddMessage("  词汇表条目: " .. glossaryCount)
+        DEFAULT_CHAT_FRAME:AddMessage("  缓存翻译数: " .. cacheStats.entries)
+        DEFAULT_CHAT_FRAME:AddMessage("  缓存命中率: " .. string.format("%.1f%%", cacheStats.hitRate))
+        DEFAULT_CHAT_FRAME:AddMessage("  等待API请求: " .. pendingCount)
+        DEFAULT_CHAT_FRAME:AddMessage("  接收队列: " .. queuedCount)
+        DEFAULT_CHAT_FRAME:AddMessage("  发送队列: " .. outgoingQueuedCount)
         local cbErr = WoWTranslate_API.GetLastCallbackError and WoWTranslate_API.GetLastCallbackError()
         if cbErr then
-            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444Last callback error:|r " .. cbErr)
+            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444上次回调错误:|r " .. cbErr)
         end
         local rlActive, rlRemaining = WoWTranslate_API.GetRateLimitInfo()
         if rlActive then
-            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444API backoff active:|r " .. rlRemaining .. "s remaining (use /wt reset to clear)")
+            DEFAULT_CHAT_FRAME:AddMessage("  |cFFFF4444API冷却中:|r " .. rlRemaining .. "秒后恢复 (输入 /wt reset 清除)|r")
         end
 
     elseif cmd == "test" then
-        local testText = arg or "\228\189\160\229\165\189"
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing: " .. testText)
+        local testText = arg or "你好"
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 测试翻译: " .. testText)
 
         local cached, found = WoWTranslate_CacheGet(testText)
         if found then
-            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Cache hit: " .. cached)
+            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 缓存命中: " .. cached)
             return
         end
 
         if not WoWTranslate_API.IsAvailable() then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] DLL not available|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 翻译核心未加载|r")
             return
         end
 
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Requesting from API...")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 正在请求API翻译...")
         WoWTranslate_API.Translate(testText, function(result, err)
             if result then
-                DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] API result: " .. result)
+                DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] API结果: " .. result)
                 WoWTranslate_CacheSave(testText, result)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] API error: " .. (err or "unknown") .. "|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] API错误: " .. (err or "未知错误") .. "|r")
             end
         end)
 
     elseif cmd == "clearcache" then
         WoWTranslate_CacheClear()
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[WoWTranslate] Cache cleared|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[WoWTranslate] 已清空翻译缓存|r")
 
     elseif cmd == "debug" then
         DEBUG_MODE = not DEBUG_MODE
         WoWTranslateDB.debugMode = DEBUG_MODE
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Debug mode: " .. (DEBUG_MODE and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"))
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 调试模式: " .. (DEBUG_MODE and "|cFF00FF00开启|r" or "|cFFFF0000关闭|r"))
 
     elseif cmd == "log" then
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Recent log entries:")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 最近日志:")
         local logs = WoWTranslateDebugLog or {}
         local start = math.max(1, table.getn(logs) - 19)
         for i = start, table.getn(logs) do
@@ -3344,83 +3281,77 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
 
     elseif cmd == "clearlog" then
         WoWTranslateDebugLog = {}
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Debug log cleared")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 已清空调试日志")
 
     elseif cmd == "testlink" then
-        -- Test hyperlink parsing and localization
-        local testMsg = "|cffffffff|Hplayer:TestName|h[TestName]|h|r says hello"
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing hyperlink parse:")
-        DEFAULT_CHAT_FRAME:AddMessage("  Input: " .. testMsg)
+        -- 测试超链接解析与本地化
+        local testMsg = "|cffffffff|Hplayer:TestName|h[TestName]|h|r 说你好"
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 测试超链接解析:")
+        DEFAULT_CHAT_FRAME:AddMessage("  输入: " .. testMsg)
         local segs = SplitIntoSegments(testMsg)
         for idx, seg in ipairs(segs) do
-            DEFAULT_CHAT_FRAME:AddMessage("  Seg " .. idx .. " [" .. seg.type .. "]: " .. seg.content)
+            DEFAULT_CHAT_FRAME:AddMessage("  分段 " .. idx .. " [" .. seg.type .. "]: " .. seg.content)
         end
 
     elseif cmd == "testitem" then
-        -- Test item localization with a known item
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing item localization...")
-        local itemId = 2589  -- Default: Linen Cloth (common item)
+        -- 测试物品本地化
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 测试物品本地化...")
+        local itemId = 2589  -- 默认：亚麻布
         if arg and arg ~= "" then
             itemId = tonumber(arg) or 19716
         end
-        DEFAULT_CHAT_FRAME:AddMessage("  Item ID: " .. tostring(itemId))
+        DEFAULT_CHAT_FRAME:AddMessage("  物品ID: " .. tostring(itemId))
         local itemName = GetItemInfo(itemId)
         if itemName then
-            DEFAULT_CHAT_FRAME:AddMessage("  GetItemInfo returned: " .. itemName)
-            -- Create a fake Chinese link to test localization
+            DEFAULT_CHAT_FRAME:AddMessage("  物品名称: " .. itemName)
             local testLink = "|cffa335ee|Hitem:" .. itemId .. ":0:0:0|h[测试物品]|h|r"
-            DEFAULT_CHAT_FRAME:AddMessage("  Test link: " .. testLink)
+            DEFAULT_CHAT_FRAME:AddMessage("  测试链接: " .. testLink)
             local localized = LocalizeHyperlink(testLink)
-            DEFAULT_CHAT_FRAME:AddMessage("  Localized: " .. localized)
+            DEFAULT_CHAT_FRAME:AddMessage("  本地化后: " .. localized)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("  GetItemInfo returned nil - item not in client cache")
-            DEFAULT_CHAT_FRAME:AddMessage("  Try: /wt testitem with an item ID you've seen (hover over an item link first)")
+            DEFAULT_CHAT_FRAME:AddMessage("  物品未缓存 - 先鼠标指向物品链接再试")
         end
 
     elseif cmd == "testquest" then
-        -- Test quest localization using pfQuest database
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing quest localization...")
-        local questId = 913  -- Default: Stranglethorn Fever (common quest)
+        -- 测试任务本地化（需要pfQuest）
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 测试任务本地化...")
+        local questId = 913
         if arg and arg ~= "" then
             questId = tonumber(arg) or 913
         end
-        DEFAULT_CHAT_FRAME:AddMessage("  Quest ID: " .. tostring(questId))
+        DEFAULT_CHAT_FRAME:AddMessage("  任务ID: " .. tostring(questId))
 
-        -- Check if pfQuest database is available
         if not pfDB or not pfDB["quests"] then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000  pfQuest database not found!|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  Quest localization requires pfQuest addon to be installed")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000  未找到pfQuest数据库|r")
             return
         end
 
         local questName = GetEnglishQuestName(questId)
         if questName then
-            DEFAULT_CHAT_FRAME:AddMessage("  GetEnglishQuestName returned: " .. questName)
-            -- Create a fake Chinese link to test localization
+            DEFAULT_CHAT_FRAME:AddMessage("  任务名称: " .. questName)
             local testLink = "|cffffff00|Hquest:" .. questId .. ":60|h[测试任务]|h|r"
-            DEFAULT_CHAT_FRAME:AddMessage("  Test link: " .. testLink)
+            DEFAULT_CHAT_FRAME:AddMessage("  测试链接: " .. testLink)
             local localized = LocalizeHyperlink(testLink)
-            DEFAULT_CHAT_FRAME:AddMessage("  Localized: " .. localized)
+            DEFAULT_CHAT_FRAME:AddMessage("  本地化后: " .. localized)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000  Quest not found in pfQuest database|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  Try: /wt testquest <questId> with a known quest ID")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000  数据库中未找到该任务|r")
         end
 
     -- =====================================================================
-    -- OUTGOING TRANSLATION COMMANDS
+    -- 发送翻译命令
     -- =====================================================================
     elseif cmd == "outgoing" then
         if arg == "on" or arg == "enable" then
             WoWTranslate_SetOutgoingEnabled(true)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Outgoing translation enabled|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] 已启用发送翻译|r")
         elseif arg == "off" or arg == "disable" then
             WoWTranslate_SetOutgoingEnabled(false)
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Outgoing translation disabled|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 已禁用发送翻译|r")
         else
-            -- No arg: toggle
+            -- 无参数：切换
             WoWTranslate_SetOutgoingEnabled(not WoWTranslateDB.outgoingEnabled)
-            local status = WoWTranslateDB.outgoingEnabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
-            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Outgoing translation: " .. status)
+            local status = WoWTranslateDB.outgoingEnabled and "|cFF00FF00开启|r" or "|cFFFF0000关闭|r"
+            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 发送翻译: " .. status)
         end
 
     elseif cmd == "outchannel" then
@@ -3432,69 +3363,69 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
             local channelType = string.upper(arg)
             if WoWTranslateDB.outgoingChannels[channelType] ~= nil then
                 WoWTranslateDB.outgoingChannels[channelType] = not WoWTranslateDB.outgoingChannels[channelType]
-                local newStatus = WoWTranslateDB.outgoingChannels[channelType] and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
-                DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Outgoing " .. channelType .. ": " .. newStatus)
+                local newStatus = WoWTranslateDB.outgoingChannels[channelType] and "|cFF00FF00开启|r" or "|cFFFF0000关闭|r"
+                DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 发送频道 " .. channelType .. ": " .. newStatus)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Unknown channel: " .. channelType .. "|r")
-                DEFAULT_CHAT_FRAME:AddMessage("  Valid channels: WHISPER, PARTY, GUILD, RAID, SAY, YELL, BATTLEGROUND, CHANNEL")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 未知频道: " .. channelType .. "|r")
+                DEFAULT_CHAT_FRAME:AddMessage("  支持频道: WHISPER, PARTY, GUILD, RAID, SAY, YELL, BATTLEGROUND, CHANNEL")
             end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Outgoing channel settings:")
+            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 发送频道设置:")
             for channelType, enabled in pairs(WoWTranslateDB.outgoingChannels) do
-                local status = enabled and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
+                local status = enabled and "|cFF00FF00开启|r" or "|cFFFF0000关闭|r"
                 DEFAULT_CHAT_FRAME:AddMessage("  " .. channelType .. ": " .. status)
             end
-            DEFAULT_CHAT_FRAME:AddMessage("  Usage: /wt outchannel <WHISPER|PARTY|GUILD|RAID|SAY|YELL|BATTLEGROUND|CHANNEL>")
+            DEFAULT_CHAT_FRAME:AddMessage("  用法: /wt outchannel <频道类型>")
         end
 
     elseif cmd == "prefix" then
         if arg and arg ~= "" then
             WoWTranslateDB.outgoingPrefix = arg
-            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Outgoing prefix set to: " .. arg)
+            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 发送前缀已设置为: " .. arg)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Current prefix: " .. (WoWTranslateDB.outgoingPrefix or "[Translated]"))
-            DEFAULT_CHAT_FRAME:AddMessage("  Usage: /wt prefix <text>")
+            DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 当前前缀: " .. (WoWTranslateDB.outgoingPrefix or "[翻译完成]"))
+            DEFAULT_CHAT_FRAME:AddMessage("  用法: /wt prefix <文字>")
         end
 
     elseif cmd == "testout" then
         local testText = arg or "Hello, how are you?"
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Testing outgoing translation:")
-        DEFAULT_CHAT_FRAME:AddMessage("  Input: " .. testText)
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 测试发送翻译:")
+        DEFAULT_CHAT_FRAME:AddMessage("  输入: " .. testText)
 
         if not WoWTranslate_API.IsAvailable() then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] DLL not available|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 翻译核心未加载|r")
             return
         end
 
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Requesting from API...")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 正在请求API...")
         WoWTranslate_API.TranslateOutgoing(testText, function(result, err)
             if result then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Translation:|r " .. result)
+                DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] 翻译结果:|r " .. result)
             else
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Error: " .. (err or "unknown") .. "|r")
+                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 错误: " .. (err or "未知错误") .. "|r")
             end
         end)
 
     -- =====================================================================
-    -- CONFIGURATION UI COMMANDS
+    -- 设置界面命令
     -- =====================================================================
     elseif cmd == "reset" then
-        -- Full recovery: re-hook frames (fixes disabled handlers), clear stale API state
+        -- 完全重置：重新挂钩、清除API状态
         local cleared = WoWTranslate_API.GetPendingCount()
         WoWTranslate_API.ClearPending()
         WoWTranslate_API.ResetBackoff()
         dllWarnShown = false
         translationErrWarnShown = false
-        HookChatFrames(true)  -- force re-install all chat frame hooks
+        HookChatFrames(true)
         local ok = WoWTranslate_API.CheckDLL()
         if ok then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Reset OK — hooks reinstalled, DLL responding, cleared " .. cleared .. " stale request(s)|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] 重置成功 — 已重新安装挂钩、核心正常、清除 " .. cleared .. " 个过期请求|r")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] Reset: hooks reinstalled but DLL not responding — try /reload|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 重置完成，但核心未响应 — 请输入 /reload|r")
         end
 
     elseif cmd == "hooktest" then
-        -- Check whether SetScript("OnEvent") hooks are installed on each chat frame
+        -- 检查聊天框架挂钩状态
         local hookedCount = 0
         local totalFrames = 0
         for i = 1, NUM_CHAT_WINDOWS do
@@ -3508,17 +3439,17 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         end
 
         if hookedCount == 0 then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[WT hooktest] NO frames hooked (0/" .. totalFrames .. ")|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[挂钩检测] 无框架被挂钩 (0/" .. totalFrames .. ")|r")
         elseif hookedCount < totalFrames then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[WT hooktest] Partially hooked: " .. hookedCount .. "/" .. totalFrames .. " frames|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[挂钩检测] 部分挂钩: " .. hookedCount .. "/" .. totalFrames .. "|r")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WT hooktest] All " .. hookedCount .. "/" .. totalFrames .. " frames hooked via SetScript(OnEvent)|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[挂钩检测] 全部 " .. hookedCount .. "/" .. totalFrames .. " 个框架已正常挂钩|r")
         end
-        DEFAULT_CHAT_FRAME:AddMessage("[WT hooktest] Hook call count: " .. tostring(hookCallCount))
+        DEFAULT_CHAT_FRAME:AddMessage("[挂钩检测] 挂钩调用次数: " .. tostring(hookCallCount))
         if hookCallCount == 0 then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[WT hooktest] Count=0: hook installed but no events fired yet (or all events filtered)|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF8800[挂钩检测] 次数=0：已安装但未触发事件|r")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WT hooktest] Hook is firing correctly|r")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[挂钩检测] 挂钩工作正常|r")
         end
 
     elseif cmd == "show" or cmd == "config" or cmd == "options" then
@@ -3528,23 +3459,23 @@ SlashCmdList["WOWTRANSLATE"] = function(msg)
         WoWTranslate_HideConfig()
 
     else
-        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] Commands:")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt show - Open configuration panel")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt hide - Close configuration panel")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt on|off - Enable/disable incoming translation")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt status - Show status")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt reset - Recover if translations stop after alt-tab")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt clearcache - Clear cache")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt debug - Toggle debug mode")
-        DEFAULT_CHAT_FRAME:AddMessage("  -- Outgoing --")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt outgoing - toggle outgoing translation (on/off to set explicitly)")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt outchannel [type] - Show/toggle channel settings")
-        DEFAULT_CHAT_FRAME:AddMessage("  /wt prefix <text> - Set message prefix")
+        DEFAULT_CHAT_FRAME:AddMessage("[WoWTranslate] 命令列表:")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt show - 打开设置面板")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt hide - 关闭设置面板")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt on|off - 启用/禁用接收翻译")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt status - 查看状态")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt reset - 翻译失效时重置")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt clearcache - 清空缓存")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt debug - 切换调试模式")
+        DEFAULT_CHAT_FRAME:AddMessage("  -- 发送翻译 --")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt outgoing - 切换发送翻译")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt outchannel [类型] - 设置发送频道")
+        DEFAULT_CHAT_FRAME:AddMessage("  /wt prefix <文字> - 设置消息前缀")
     end
 end
 
 -- ============================================================================
--- ADDON INITIALIZATION
+-- 插件初始化
 -- ============================================================================
 local function InitializeSettings()
     if not WoWTranslateDB then WoWTranslateDB = {} end
@@ -3557,12 +3488,12 @@ local function InitializeSettings()
         end
     end
 
-    -- Migration: fix old short prefix to new full prefix
+    -- 旧配置迁移
     if WoWTranslateDB.outgoingPrefix == "[Translated]" then
         WoWTranslateDB.outgoingPrefix = "[Translated by WoWTranslate]"
     end
 
-    -- Migration: add BATTLEGROUND/CHANNEL/HARDCORE to existing outgoingChannels
+    -- 新增频道配置补全
     if WoWTranslateDB.outgoingChannels then
         if WoWTranslateDB.outgoingChannels.BATTLEGROUND == nil then
             WoWTranslateDB.outgoingChannels.BATTLEGROUND = true
@@ -3578,7 +3509,7 @@ local function InitializeSettings()
         end
     end
 
-    -- Migration: create incomingChannels if it doesn't exist
+    -- 接收频道初始化
     if not WoWTranslateDB.incomingChannels then
         WoWTranslateDB.incomingChannels = {}
         for k, v in pairs(defaults.incomingChannels) do
@@ -3598,11 +3529,11 @@ local function InitializeSettings()
 
     DEBUG_MODE = WoWTranslateDB.debugMode or false
 
-    -- Migrate: remove old apiKey and incomingFromLang fields
+    -- 移除废弃配置
     WoWTranslateDB.apiKey = nil
     WoWTranslateDB.incomingFromLang = nil
 
-    -- Migrate: add enabledSourceLangs if missing
+    -- 语言配置补全
     if WoWTranslateDB.enabledSourceLangs == nil then
         WoWTranslateDB.enabledSourceLangs = { zh=true, ja=true, ko=true, ru=true }
     end
@@ -3610,7 +3541,7 @@ local function InitializeSettings()
         WoWTranslateDB.enabledSourceLangs.en = false
     end
 
-    -- Migration: new name/guild translation settings (v1.3+)
+    -- 名字/公会翻译配置
     if WoWTranslateDB.translatePlayerNames == nil then
         WoWTranslateDB.translatePlayerNames = false
     end
@@ -3648,18 +3579,14 @@ local function OnAddonLoaded()
 
     local glossaryCount = WoWTranslate_GetGlossaryCount()
     local cacheCount = WoWTranslate_CacheStats().entries
-    local dllStatus = dllOk and "|cFF00FF00DLL OK|r" or "|cFFFFFF00DLL not loaded|r"
+    local dllStatus = dllOk and "|cFF00FF00核心正常|r" or "|cFFFFFF00核心未加载|r"
 
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.5 - " .. dllStatus .. " | /wt show")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFFWoWTranslate|r v1.5 - " .. dllStatus .. " | 输入 /wt show 打开设置")
 end
 
 -- ============================================================================
--- PLAYER NAME TRANSLATION (Shift+RightClick on a chat name hyperlink)
+-- 玩家名字翻译（Shift+右键点击聊天名字）
 -- ============================================================================
--- Wraps ChatFrame_OnHyperlinkShow.  When the user Shift+RightClicks a player
--- link we translate the name and print "[WT]: Name = Translation".
--- If Translate() can't queue (rate limited / DLL busy) we fall through so the
--- normal right-click context menu still opens — no silent failures.
 local function HookHyperlinkShow()
     local origHyperlink = ChatFrame_OnHyperlinkShow
     if not origHyperlink then return end
@@ -3667,7 +3594,6 @@ local function HookHyperlinkShow()
     ChatFrame_OnHyperlinkShow = function(link, text, button)
         local capturedFrame = this
         if button == "RightButton" and IsShiftKeyDown() then
-            -- link format is "player:CharacterName"
             local _, _, playerName = string.find(link, "^player:(.+)")
             if playerName and playerName ~= ""
                and WoWTranslate_API and WoWTranslate_API.IsAvailable() then
@@ -3677,11 +3603,10 @@ local function HookHyperlinkShow()
                         if translation and translation ~= "" and translation ~= playerName then
                             frame:AddMessage("|cFF00CCFF[WT]|r: " .. playerName .. " = " .. translation)
                         elseif err then
-                            frame:AddMessage("|cFFFFFF00[WT]: name lookup failed: " .. tostring(err) .. "|r")
+                            frame:AddMessage("|cFFFFFF00[WT]: 名字翻译失败: " .. tostring(err) .. "|r")
                         end
                     end, "auto")
                 if sent then return end
-                -- Translate() returned false: rate limited or queue full — fall through
             end
         end
         origHyperlink(link, text, button)
@@ -3697,19 +3622,19 @@ local function OnPlayerLogin()
         WoWTranslate_API.CheckDLL()
     end
 
-    -- Install outgoing hook if enabled
+    -- 启用时安装发送挂钩
     if WoWTranslateDB and WoWTranslateDB.outgoingEnabled then
         InstallOutgoingHook()
     end
 
-    -- Install LFT hook if enabled (LFT loads before WoWTranslate alphabetically)
+    -- 启用时安装组队查找器挂钩
     if WoWTranslateDB and WoWTranslateDB.translateGroupFinder then
         HookLFT()
     end
 end
 
 -- ============================================================================
--- EVENT FRAME
+-- 事件框架
 -- ============================================================================
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
@@ -3724,7 +3649,7 @@ eventFrame:SetScript("OnEvent", function()
     elseif event == "PLAYER_LOGIN" then
         OnPlayerLogin()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Re-check DLL after any loading screen (zone in, /reload, etc.)
+        -- 切图/重载后重新检查核心
         if not WoWTranslate_API.IsAvailable() then
             WoWTranslate_API.CheckDLL()
         end
@@ -3741,6 +3666,7 @@ eventFrame:SetScript("OnEvent", function()
     end
 end)
 
+-- 定时清理队列
 local cleanupFrame = CreateFrame("Frame")
 local cleanupElapsed = 0
 cleanupFrame:SetScript("OnUpdate", function()
@@ -3752,10 +3678,7 @@ cleanupFrame:SetScript("OnUpdate", function()
     end
 end)
 
--- Watchdog: WoW 1.12 replaces SetScript("OnEvent") handlers on chat frames when
--- certain events fire (channel join, zone change, UPDATE_CHAT_WINDOWS, etc.).
--- Re-install our wrappers every 60s so hooks stay active after such events.
--- pcall prevents a HookChatFrames error from silently killing this OnUpdate.
+-- 挂钩守护进程：防止魔兽重置聊天框架事件
 local hookWatchdogElapsed = 0
 local hookWatchdogFrame = CreateFrame("Frame")
 hookWatchdogFrame:SetScript("OnUpdate", function()
@@ -3767,24 +3690,18 @@ hookWatchdogFrame:SetScript("OnUpdate", function()
 end)
 
 -- ============================================================================
--- ITEM CACHE POLLING
+-- 物品缓存轮询
 -- ============================================================================
--- Process messages waiting for item cache data
-
 local function ProcessItemCacheMessage(queued)
     local text = queued.text
     local detectedLang = DetectSourceLanguage(text) or "zh"
 
-    -- Split header from body (same approach as the main hook)
     local headerText, msgBody = SplitHeaderAndMessage(text)
-
-    -- Segment only the message body
     local segments = SplitIntoSegments(msgBody)
 
-    DebugLog("Processing cached item message, segments:", table.getn(segments))
+    DebugLog("处理物品缓存消息，分段数:", table.getn(segments))
 
     if not HasTranslatableContent(segments) then
-        -- Body has no translatable content; show with localized hyperlinks
         local result = headerText
         for _, seg in ipairs(segments) do
             result = result .. seg.content
@@ -3797,14 +3714,14 @@ local function ProcessItemCacheMessage(queued)
 
     local cached, found = WoWTranslate_CacheGet(msgBody)
     if found then
-        DebugLog("Cache hit for item message")
+        DebugLog("物品消息缓存命中")
         local finalText = headerText .. ReconstructMessage(segments, cached)
         queued.originalAddMessage(queued.frame, finalText, queued.r, queued.g, queued.b, queued.id, queued.holdTime)
         return
     end
 
     if WoWTranslate_API and WoWTranslate_API.IsAvailable() then
-        DebugLog("Requesting translation for item message")
+        DebugLog("请求物品消息翻译")
         messageCounter = messageCounter + 1
         local msgId = tostring(messageCounter)
         pendingMessages[msgId] = {
@@ -3823,12 +3740,10 @@ local function ProcessItemCacheMessage(queued)
             if pending then
                 pendingMessages[msgId] = nil
                 if translation and translation ~= "" then
-                    DebugLog("API returned for item msg:", string.sub(translation, 1, 50))
                     local finalText = pending.headerText .. ReconstructMessage(pending.segments, translation)
                     WoWTranslate_CacheSave(pending.msgBody, translation)
                     pcall(pending.originalAddMessage, pending.frame, finalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
                 else
-                    DebugLog("API error for item msg:", tostring(err))
                     pcall(pending.originalAddMessage, pending.frame, pending.originalText, pending.r, pending.g, pending.b, pending.id, pending.holdTime)
                 end
             end
@@ -3842,9 +3757,9 @@ end
 
 local itemCacheFrame = CreateFrame("Frame")
 local itemCacheElapsed = 0
-local ITEM_CACHE_POLL_INTERVAL = 0.05  -- Poll every 50ms
-local ITEM_CACHE_MAX_WAIT = 3.0        -- Max wait 3 seconds
-local ITEM_CACHE_RETRY_INTERVAL = 0.5  -- Retry triggering cache every 500ms
+local ITEM_CACHE_POLL_INTERVAL = 0.05
+local ITEM_CACHE_MAX_WAIT = 3.0
+local ITEM_CACHE_RETRY_INTERVAL = 0.5
 
 itemCacheFrame:SetScript("OnUpdate", function()
     itemCacheElapsed = itemCacheElapsed + arg1
@@ -3854,32 +3769,23 @@ itemCacheFrame:SetScript("OnUpdate", function()
     itemCacheElapsed = 0
 
     for cacheId, queued in pairs(itemCacheQueue) do
-        local allCached = CheckItemCache(queued.itemIds, false)  -- Just check, don't trigger
+        local allCached = CheckItemCache(queued.itemIds, false)
         local elapsed = GetTime() - queued.timestamp
 
         if allCached then
-            DebugLog("Items cached, processing message:", cacheId)
+            DebugLog("物品已缓存，处理消息:", cacheId)
             itemCacheQueue[cacheId] = nil
             ProcessItemCacheMessage(queued)
         elseif elapsed > ITEM_CACHE_MAX_WAIT then
-            -- Timeout - process anyway with whatever we have
-            local _, stillUncached = CheckItemCache(queued.itemIds, false)
-            DebugLog("Item cache timeout after", elapsed, "sec, uncached:", table.getn(stillUncached))
-            for _, uid in ipairs(stillUncached) do
-                DebugLog("  Still uncached item ID:", uid)
-            end
+            DebugLog("物品缓存超时", elapsed, "秒")
             itemCacheQueue[cacheId] = nil
             ProcessItemCacheMessage(queued)
         else
-            -- Retry triggering cache periodically for stubborn items
             if not queued.lastRetry or (GetTime() - queued.lastRetry) > ITEM_CACHE_RETRY_INTERVAL then
                 queued.lastRetry = GetTime()
                 queued.retries = (queued.retries or 0) + 1
-                if queued.retries <= 5 then  -- Max 5 retries
-                    local _, stillUncached = CheckItemCache(queued.itemIds, true)  -- Trigger cache again
-                    if table.getn(stillUncached) > 0 then
-                        DebugLog("Retry", queued.retries, "- triggering cache for", table.getn(stillUncached), "items")
-                    end
+                if queued.retries <= 5 then
+                    local _, stillUncached = CheckItemCache(queued.itemIds, true)
                 end
             end
         end
