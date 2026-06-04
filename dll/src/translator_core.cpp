@@ -271,7 +271,7 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
                                                    const string& targetLang) {
     if (!initialized || text.empty()) return TranslationResult::INVALID_PARAMS;
 
-    // 优先读取本地高频缓存 (原文是 GBK 格式)
+    // 优先读取本地高频缓存 (缓存键和值均统一采用纯正 UTF-8 格式)
     string cacheKey = GenerateCacheKey(text, sourceLang, targetLang);
     auto cacheIt = cache.find(cacheKey);
     if (cacheIt != cache.end() && (GetTickCount() - cacheIt->second.timestamp) < CACHE_EXPIRY_MS) {
@@ -281,12 +281,8 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
 
     CleanExpiredCache();
 
-    // 【致命修复 1】: 将魔兽世界的 GBK 文本强制转为 百度要求的 UTF-8
-    string utf8Text = AnsiToUtf8(text);
-    if (utf8Text.empty()) {
-        LOG_ERROR("Encoding Error: Cannot convert WoW client text to UTF-8");
-        return TranslationResult::ENCODING_ERROR;
-    }
+    // 【优化修复 1】: 现代魔兽客户端（如乌龟服）本身全流程采用 UTF-8 编码，直接使用原文，无需画蛇添足做 ANSI 转换
+    string utf8Text = text;
 
     // 检查授权秘钥完整性
     if (m_appId.empty() || m_secretKey.empty()) {
@@ -300,11 +296,11 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     // 生成百度鉴权三要素：随机盐值 (Salt) 和安全签名 (Sign)
     string salt = to_string(GetTickCount());
     
-    // 【致命修复 2】: 签名必须使用 UTF-8 的文本进行拼接计算！否则必报 54001 鉴权失败！
+    // 签名使用纯正的 UTF-8 文本进行拼接计算
     string signSource = m_appId + utf8Text + salt + m_secretKey; 
     string md5Sign = ::CalculateMD5(signSource); // 统一调用 utils 中的原生 MD5
 
-    // 【致命修复 3】: URL Encode 必须对 UTF-8 的文本操作！防止乱码导致网络库死锁崩溃
+    // URL Encode 对 UTF-8 的文本操作
     string postData = "q=" + ::UrlEncode(utf8Text) +
                       "&from=" + sl +
                       "&to=" + tl +
@@ -357,7 +353,7 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
         return TranslationResult::NETWORK_ERROR;
     }
 
-    // 解析过滤回传数据 (此时 translationUtf8 依然是 UTF-8 编码)
+    // 解析过滤回传数据 (此时 translationUtf8 是纯正的 UTF-8 编码)
     string translationUtf8 = ParseBaiduResponse(response);
 
     if (translationUtf8.empty()) {
@@ -365,16 +361,9 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
         return TranslationResult::API_ERROR;
     }
 
-    // 【致命修复 4】: 将百度返回的 UTF-8 结果转回魔兽客户端强制要求的 GBK 编码！防止游戏乱码白屏！
-    string translationAnsi = Utf8ToAnsi(translationUtf8);
-    if (translationAnsi.empty()) {
-        LOG_ERROR("Encoding Error: Cannot convert Baidu response to Game ANSI/GBK");
-        return TranslationResult::ENCODING_ERROR;
-    }
-
-    // 将符合魔兽规范的最终 GBK 文本写入本地高速缓存并交付
-    cache[cacheKey] = CacheEntry(translationAnsi);
-    result = translationAnsi;
+    // 【核心修复 4】: 移除毁灭性的 Utf8ToAnsi 转换！直接将原汁原味的 UTF-8 结果回传并加入缓存，完美适配现代多语言游戏客户端
+    cache[cacheKey] = CacheEntry(translationUtf8);
+    result = translationUtf8;
     LOG_DEBUG("Successfully Translated Text!");
     return TranslationResult::SUCCESS;
 }
