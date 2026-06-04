@@ -16,6 +16,8 @@
 #include "../include/logging.h"
 #include "../include/utils.h"
 
+#include <wincrypt.h> // Windows 自带的加密 API (用于 MD5)
+
 #pragma comment(lib, "wininet.lib")
 
 // 【关键修复】确保老旧编译环境下也能识别 Win7 的 TLS 1.2 标记与 WinINet 选项
@@ -559,3 +561,51 @@ void TranslationClient::SaveConfig(const string& appId, const string& secretKey)
     
     LOG_INFO("Baidu API Key updated and saved to INI");
 }
+
+// =========================================================
+// 工具函数 1：URL 编码 (用于处理待翻译的中文或带空格的英文)
+// =========================================================
+std::string UrlEncode(const std::string& value) {
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex;
+    for (char c : value) {
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            escaped << c;
+        } else {
+            escaped << std::uppercase << '%' << std::setw(2) << int((unsigned char)c);
+            escaped << std::nouppercase;
+        }
+    }
+    return escaped.str();
+}
+
+// =========================================================
+// 工具函数 2：MD5 签名 (利用 Windows 密码学 API 生成，免第三方库)
+// =========================================================
+std::string GetMD5(const std::string& src) {
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    std::string hashStr = "";
+
+    // 调用 Windows 底层加密提供程序
+    if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+        if (CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
+            if (CryptHashData(hHash, (const BYTE*)src.c_str(), src.length(), 0)) {
+                BYTE rgbHash[16];
+                DWORD cbHash = 16;
+                if (CryptGetHashParam(hHash, HP_HASHVAL, rgbHash, &cbHash, 0)) {
+                    char hex[33];
+                    for (int i = 0; i < 16; i++) {
+                        snprintf(hex + i * 2, 3, "%02x", rgbHash[i]);
+                    }
+                    hashStr = hex;
+                }
+            }
+            CryptDestroyHash(hHash);
+        }
+        CryptReleaseContext(hProv, 0);
+    }
+    return hashStr;
+}
+// =========================================================
