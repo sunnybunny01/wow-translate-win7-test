@@ -506,8 +506,8 @@ void TranslationClient::WorkerThreadFunc() {
     LOG_INFO("Worker thread stopped");
 }
 
-    // 新增函数：动态获取当前 DLL 同级目录下的 wt_config.ini 绝对路径
-    string TranslationClient::GetConfigPath() {
+// 新增函数：动态获取当前 DLL 同级目录下的 wt_config.ini 绝对路径
+string TranslationClient::GetConfigPath() {
     char dllPath[MAX_PATH] = {0};
     // 获取当前 DLL 的模块句柄并转换为路径
     GetModuleFileNameA(GetModuleHandleA("WoWTranslate.dll"), dllPath, MAX_PATH);
@@ -522,8 +522,8 @@ void TranslationClient::WorkerThreadFunc() {
     return path;
 }
 
-    // 新增函数：从 INI 文件读取配置
-    void TranslationClient::LoadConfig() {
+// 新增函数：从 INI 文件读取配置
+void TranslationClient::LoadConfig() {
     string iniPath = GetConfigPath();
     char appBuf[256] = {0};
     char keyBuf[256] = {0};
@@ -542,8 +542,8 @@ void TranslationClient::WorkerThreadFunc() {
     }
 }
 
-    // 新增函数：将配置写入 INI 文件
-    void TranslationClient::SaveConfig(const string& appId, const string& secretKey) {
+// 新增函数：将配置写入 INI 文件
+void TranslationClient::SaveConfig(const string& appId, const string& secretKey) {
     string iniPath = GetConfigPath();
     
     // 利用 Windows API 写入配置
