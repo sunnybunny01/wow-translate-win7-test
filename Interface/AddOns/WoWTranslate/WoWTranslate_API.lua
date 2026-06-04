@@ -434,23 +434,23 @@ function WoWTranslate_API.GetPendingRequests()
     return info
 end
 
--- 注册 /wt 斜杠命令
-SLASH_WOWTRANSLATE1 = "/wt"
-SlashCmdList["WOWTRANSLATE"] = function(msg)
-    -- 按空格分割玩家输入的字符串
-    -- 例如: /wt key 123456 789abc
-    local _, _, cmd, appid, secret = string.find(msg, "(%S+)%s+(%S+)%s+(%S+)")
+-- ================= 新增：百度 API 专属配置命令 =================
+-- 注册一个完全独立的新命令 /wtkey，避免和原插件的 /wt 冲突
+SLASH_WOWTRANSLATE_KEY1 = "/wtkey"
+SlashCmdList["WOWTRANSLATE_KEY"] = function(msg)
+    -- 提取输入的两个参数 (去除多余空格)
+    local _, _, appid, secret = string.find(msg, "^%s*(%S+)%s+(%S+)%s*$")
     
-    if cmd == "key" and appid and secret then
+    if appid and secret then
         -- 通过 UnitXP 这个唯一通道将数据发给 C++
         local payload = "wt_key:" .. appid .. ":" .. secret
         UnitXP("WoWTranslate", payload)
         
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate]|r 密钥已下发，正在保存到 wt_config.ini...", 1, 1, 1)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[WoWTranslate]|r 用法:", 1, 1, 1)
-        DEFAULT_CHAT_FRAME:AddMessage("输入 /wt key <AppID> <密钥> 来配置百度翻译", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 格式错误！|r", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("正确用法: /wtkey <你的AppID> <你的密钥>", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("例如: /wtkey 20240101ABCD MySecret1234", 1, 1, 1)
     end
 end
-
-
+-- ================================================================
