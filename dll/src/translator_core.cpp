@@ -1,5 +1,5 @@
 // translator_core.cpp - Translation functionality for WoWTranslate
-// Sends POST requests to cn.bing.com — Microsoft Bing Free Translation
+// Sends requests to cn.bing.com — Microsoft Bing Free Translation
 
 #include <windows.h>
 #include <wininet.h>
@@ -19,6 +19,16 @@
 #pragma comment(lib, "wininet.lib")
 
 using namespace std;
+
+// 提取字符串中间内容的辅助函数 (用于提取Token)
+static string ExtractBetween(const string& str, const string& start, const string& end) {
+    size_t s = str.find(start);
+    if (s == string::npos) return "";
+    s += start.length();
+    size_t e = str.find(end, s);
+    if (e == string::npos) return "";
+    return str.substr(s, e - s);
+}
 
 // UTF-8 codepoint encoder (file-scope for use in multiple places)
 static string ConvertCodepointToUTF8(unsigned int codepoint) {
@@ -111,13 +121,13 @@ TranslationClient::~TranslationClient() {
 bool TranslationClient::Initialize() {
     if (initialized) Cleanup();
 
-    // Changed to Bing's China-friendly endpoint
     const std::string host = "cn.bing.com";
     const int port = 443;
 
     LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode)");
 
-    hSession = InternetOpenW(L"WoWTranslate/0.14",
+    // 【关键修改 1】伪装成真实的浏览器 User-Agent，不能用 WoWTranslate/0.14
+    hSession = InternetOpenW(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                              INTERNET_OPEN_TYPE_PRECONFIG,
                              NULL,
                              NULL,
@@ -216,66 +226,18 @@ void TranslationClient::CleanExpiredCache() {
     }
 }
 
-// Map Google Lang Codes to Microsoft Bing Lang Codes
 string TranslationClient::MapLangCode(const string& lang) {
-    if (lang == "zh" || lang == "zh-CN") return "zh-Hans"; // Simplified Chinese
-    if (lang == "zh-TW") return "zh-Hant"; // Traditional Chinese
+    if (lang == "zh" || lang == "zh-CN") return "zh-Hans";
+    if (lang == "zh-TW") return "zh-Hant";
     return lang;
 }
 
-// Changed to POST for Bing Translate API
+// 保留此函数以兼容头文件声明，但核心逻辑已移至 TranslateText 中
 string TranslationClient::HttpsPost(const string& path, const string& postData) {
-    if (!hConnect) return "";
-
-    wstring wPath(path.begin(), path.end());
-
-    HINTERNET hRequest = HttpOpenRequestW(
-        hConnect, L"POST", wPath.c_str(), nullptr,
-        nullptr, nullptr,
-        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
-
-    if (!hRequest) {
-        LOG_ERROR("Failed to open POST request via WinINet");
-        return "";
-    }
-
-    // Bing requires a valid User-Agent and proper Content-Type for POST body
-    wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n"
-                      L"User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36\r\n";
-    
-    BOOL result = HttpSendRequestW(hRequest, headers.c_str(), (DWORD)-1, 
-                                   (LPVOID)postData.c_str(), (DWORD)postData.length());
-
-    string response;
-    if (result) {
-        DWORD statusCode = 0;
-        DWORD statusLen  = sizeof(DWORD);
-        HttpQueryInfoW(hRequest,
-            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
-            &statusCode, &statusLen, NULL);
-            
-        if (statusCode == 429) {
-            LOG_WARNING("Rate limited by Bing (HTTP 429)");
-            InternetCloseHandle(hRequest);
-            return "HTTP_429";
-        }
-
-        char buffer[8192];
-        DWORD bytesRead = 0;
-        while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
-            response.append(buffer, bytesRead);
-        }
-    } else {
-        LOG_ERROR("POST request failed: " + to_string(GetLastError()));
-    }
-
-    InternetCloseHandle(hRequest);
-    return response;
+    return "";
 }
 
-// New JSON Parser specifically for Bing's response
 string TranslationClient::ParseBingResponse(const string& json) {
-    // Bing format: [{"detectedLanguage":{...},"translations":[{"text":"translated_result","to":"zh-Hans"}]}]
     size_t transPos = json.find("\"translations\"");
     if (transPos == string::npos) return "";
 
@@ -302,6 +264,7 @@ string TranslationClient::ParseBingResponse(const string& json) {
     return SimpleJsonParser::unescapeJson(extracted);
 }
 
+// 【关键修改 2】重写翻译核心流程：GET获取Token -> POST提交翻译
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
                                                    const string& sourceLang,
                                                    const string& targetLang) {
@@ -321,28 +284,95 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     string sl = MapLangCode(sourceLang);
     string tl = MapLangCode(targetLang);
     
-    // Bing POST path
-    string path = "/ttranslatev3?isVertical=1";
-    // Bing POST data body
-    string postData = "&text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
+    // === 第一步：GET 首页获取动态防爬虫 Token ===
+    string ig, key, token;
+    HINTERNET hGetReq = HttpOpenRequestW(hConnect, L"GET", L"/translator", nullptr, nullptr, nullptr, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
+    if (hGetReq) {
+        // 【关键修改 3】Win7兼容性：忽略证书错误
+        DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+        InternetSetOptionW(hGetReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
 
-    LOG_DEBUG("POST " + path + " | Data: " + postData.substr(0, 100));
-
-    string response = HttpsPost(path, postData);
-
-    if (response == "HTTP_429") {
-        return TranslationResult::RATE_LIMITED;
+        if (HttpSendRequestW(hGetReq, nullptr, 0, nullptr, 0)) {
+            string html;
+            char buffer[4096];
+            DWORD bytesRead = 0;
+            while (InternetReadFile(hGetReq, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+                html.append(buffer, bytesRead);
+            }
+            
+            ig = ExtractBetween(html, "IG:\"", "\"");
+            string params = ExtractBetween(html, "params_RichTranslateHelper = [", "]");
+            if (!params.empty()) {
+                size_t commaPos = params.find(",");
+                if (commaPos != string::npos) {
+                    key = params.substr(0, commaPos);
+                    token = ExtractBetween(params, "\"", "\"");
+                }
+            }
+        }
+        InternetCloseHandle(hGetReq);
     }
 
+    // === 第二步：拼接凭据并 POST 获取翻译 ===
+    string path = "/ttranslatev3?isVertical=1";
+    if (!ig.empty()) {
+        path += "&IG=" + ig + "&IID=translator.5024.1";
+    }
+    wstring wPath(path.begin(), path.end());
+
+    HINTERNET hPostReq = HttpOpenRequestW(hConnect, L"POST", wPath.c_str(), nullptr, nullptr, nullptr, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hPostReq) {
+        LOG_ERROR("Failed to open POST request via WinINet");
+        return TranslationResult::NETWORK_ERROR;
+    }
+
+    // Win7兼容性：忽略证书错误
+    DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+    InternetSetOptionW(hPostReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
+
+    wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n"
+                      L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\r\n";
+
+    string postData = "&text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
+    if (!token.empty() && !key.empty()) {
+        postData += "&token=" + UrlEncode(token) + "&key=" + key;
+    }
+
+    LOG_DEBUG("POST " + path + " | Data Length: " + to_string(postData.length()));
+
+    string response;
+    BOOL res = HttpSendRequestW(hPostReq, headers.c_str(), (DWORD)-1, (LPVOID)postData.c_str(), (DWORD)postData.length());
+    
+    if (res) {
+        DWORD statusCode = 0;
+        DWORD statusLen  = sizeof(DWORD);
+        HttpQueryInfoW(hPostReq, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &statusLen, NULL);
+            
+        if (statusCode == 429) {
+            LOG_WARNING("Rate limited by Bing (HTTP 429)");
+            InternetCloseHandle(hPostReq);
+            return TranslationResult::RATE_LIMITED;
+        }
+
+        char buffer[8192];
+        DWORD bytesRead = 0;
+        while (InternetReadFile(hPostReq, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
+            response.append(buffer, bytesRead);
+        }
+    } else {
+        LOG_ERROR("POST request failed: " + to_string(GetLastError()));
+    }
+    InternetCloseHandle(hPostReq);
+
     if (response.empty()) {
-        LOG_ERROR("Empty response from Bing Free");
+        LOG_ERROR("Empty response from Bing Free (Blocked by Firewall or Token Failed)");
         return TranslationResult::NETWORK_ERROR;
     }
 
     string translation = ParseBingResponse(response);
 
     if (translation.empty()) {
-        LOG_ERROR("Failed to parse Bing Free response");
+        LOG_ERROR("Failed to parse Bing Free response. Raw JSON: " + response.substr(0, 100));
         return TranslationResult::API_ERROR;
     }
 
