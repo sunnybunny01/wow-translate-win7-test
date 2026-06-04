@@ -434,23 +434,33 @@ function WoWTranslate_API.GetPendingRequests()
     return info
 end
 
--- ================= 新增：百度 API 专属配置命令 =================
--- 注册一个完全独立的新命令 /wtkey，避免和原插件的 /wt 冲突
+-- ====================================================================
+-- 新增：百度 API 专属配置命令 (Baidu API Version)
+-- ====================================================================
+-- 注册独立的 /wtkey 命令，专门用于在游戏内动态绑定百度翻译的凭据
 SLASH_WOWTRANSLATE_KEY1 = "/wtkey"
 SlashCmdList["WOWTRANSLATE_KEY"] = function(msg)
-    -- 提取输入的两个参数 (去除多余空格)
+    -- 健壮性检查：防止玩家直接打 /wtkey 后面什么都不输入导致 msg 为 nil
+    if not msg then msg = "" end
+
+    -- 提取输入的两个参数 (自动去除前导、中间、尾部的多余空格)
     local _, _, appid, secret = string.find(msg, "^%s*(%S+)%s+(%S+)%s*$")
     
     if appid and secret then
-        -- 通过 UnitXP 这个唯一通道将数据发给 C++
+        -- 构建安全荷载 (通过自定义特征前缀 wt_key: 进行封包)
         local payload = "wt_key:" .. appid .. ":" .. secret
+        
+        -- 【核心后门通道】利用 C++ 已拦截的 UnitXP 函数，将密匙数据安全送达 DLL 底层
         UnitXP("WoWTranslate", payload)
         
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate]|r 密钥已下发，正在保存到 wt_config.ini...", 1, 1, 1)
+        -- 在游戏聊天框打印绿色成功提示
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] 百度翻译凭据已成功下发！|r", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFCC00[提示]|r DLL 底层正在将其持久化写入到 wt_config.ini 文件...", 1, 1, 1)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 格式错误！|r", 1, 1, 1)
-        DEFAULT_CHAT_FRAME:AddMessage("正确用法: /wtkey <你的AppID> <你的密钥>", 1, 1, 1)
-        DEFAULT_CHAT_FRAME:AddMessage("例如: /wtkey 20240101ABCD MySecret1234", 1, 1, 1)
+        -- 格式错误时的友好引导界面（带颜色高亮，体验更好）
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000[WoWTranslate] 输入格式错误！|r", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FFFF正确用法：|r /wtkey <你的Baidu_AppID> <你的Baidu_密钥>", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF888888示例：/wtkey 2026010100001234 abcde12345678FGH|r", 1, 1, 1)
     end
 end
--- ================================================================
+-- ====================================================================
