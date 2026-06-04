@@ -1,13 +1,13 @@
 -- WoWTranslate_Minimap.lua
--- Minimap button for WoWTranslate (Atlas pattern)
--- Left-click toggles config panel, drag to reposition around minimap edge
+-- 小地图快捷按钮
+-- 左键点击打开设置面板，拖动可调整按钮位置
 
 local MINIMAP_BUTTON_RADIUS = 80
-local DEFAULT_POSITION = 225  -- degrees, bottom-left area
+local DEFAULT_POSITION = 225  -- 角度，左下区域
 local isDragging = false
 
 -- ============================================================================
--- UPDATE POSITION (polar -> cartesian)
+-- 更新按钮位置（极坐标转直角坐标）
 -- ============================================================================
 local function UpdatePosition()
     if not WoWTranslateMinimapButton then return end
@@ -23,7 +23,7 @@ local function UpdatePosition()
 end
 
 -- ============================================================================
--- CREATE BUTTON (single Button on Minimap, Atlas pattern)
+-- 创建小地图按钮
 -- ============================================================================
 local button = CreateFrame("Button", "WoWTranslateMinimapButton", Minimap)
 button:SetWidth(33)
@@ -35,21 +35,21 @@ button:SetMovable(true)
 button:RegisterForClicks("LeftButtonUp")
 button:RegisterForDrag("LeftButton")
 
--- Icon texture (scroll/note — fits "translation" theme)
+-- 图标素材
 local icon = button:CreateTexture(nil, "ARTWORK")
 icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
 icon:SetWidth(20)
 icon:SetHeight(20)
 icon:SetPoint("CENTER", button, "CENTER", 0, 0)
 
--- Border texture (standard minimap button border)
+-- 按钮边框
 local border = button:CreateTexture(nil, "OVERLAY")
 border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 border:SetWidth(52)
 border:SetHeight(52)
 border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
 
--- Highlight texture
+-- 高亮效果
 local highlight = button:CreateTexture(nil, "HIGHLIGHT")
 highlight:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 highlight:SetWidth(24)
@@ -58,7 +58,7 @@ highlight:SetPoint("CENTER", button, "CENTER", 0, 0)
 highlight:SetBlendMode("ADD")
 
 -- ============================================================================
--- DRAG LOGIC
+-- 拖动逻辑
 -- ============================================================================
 button:SetScript("OnDragStart", function()
     isDragging = true
@@ -84,7 +84,7 @@ button:SetScript("OnDragStop", function()
 end)
 
 -- ============================================================================
--- CLICK HANDLER
+-- 点击响应
 -- ============================================================================
 button:SetScript("OnClick", function()
     if isDragging then return end
@@ -94,13 +94,13 @@ button:SetScript("OnClick", function()
 end)
 
 -- ============================================================================
--- TOOLTIP
+-- 鼠标提示
 -- ============================================================================
 button:SetScript("OnEnter", function()
     if isDragging then return end
     GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-    GameTooltip:AddLine("WoWTranslate")
-    GameTooltip:AddLine("Click to open settings", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("翻译插件")
+    GameTooltip:AddLine("点击打开设置界面", 0.8, 0.8, 0.8)
     GameTooltip:Show()
 end)
 
@@ -109,7 +109,7 @@ button:SetScript("OnLeave", function()
 end)
 
 -- ============================================================================
--- INITIALIZATION (called from WoWTranslate.lua after settings are loaded)
+-- 初始化函数
 -- ============================================================================
 function WoWTranslate_MinimapButton_Init()
     if not WoWTranslateDB then WoWTranslateDB = {} end
