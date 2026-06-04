@@ -1,20 +1,20 @@
 -- WoWTranslate_Config.lua
--- Configuration UI panel for WoWTranslate
--- v0.13: Removed API key/credits UI; added source language checkboxes
+-- 翻译插件配置界面
+-- v0.13: 移除API密钥/贡献者界面；添加源语言复选框
 
 -- ============================================================================
--- LANGUAGES
+-- 语言列表
 -- ============================================================================
 local LANGUAGES = {
-    { code = "zh", name = "Chinese" },
-    { code = "en", name = "English" },
-    { code = "ko", name = "Korean" },
-    { code = "ja", name = "Japanese" },
-    { code = "ru", name = "Russian" },
-    { code = "de", name = "German" },
-    { code = "fr", name = "French" },
-    { code = "es", name = "Spanish" },
-    { code = "pt", name = "Portuguese" },
+    { code = "zh", name = "中文" },
+    { code = "en", name = "英文" },
+    { code = "ko", name = "韩文" },
+    { code = "ja", name = "日文" },
+    { code = "ru", name = "俄文" },
+    { code = "de", name = "德文" },
+    { code = "fr", name = "法文" },
+    { code = "es", name = "西班牙文" },
+    { code = "pt", name = "葡萄牙文" },
 }
 
 local function GetLanguageIndex(code)
@@ -36,7 +36,7 @@ local function GetLanguageName(code)
 end
 
 -- ============================================================================
--- TEMP CONFIG
+-- 临时配置
 -- ============================================================================
 WoWTranslate_TempConfig = {}
 
@@ -72,7 +72,7 @@ local function SaveTempConfig()
 end
 
 -- ============================================================================
--- CREATE MAIN FRAME
+-- 创建主窗口
 -- ============================================================================
 local configFrame = CreateFrame("Frame", "WoWTranslateConfigFrame", UIParent)
 configFrame:Hide()
@@ -102,28 +102,28 @@ configFrame:SetScript("OnMouseUp", function()
     this:StopMovingOrSizing()
 end)
 
--- Title
+-- 标题
 local title = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOP", configFrame, "TOP", 0, -20)
-title:SetText("WoWTranslate Configuration - v1.5")
+title:SetText("聊天翻译设置 - v1.5 -夏姬汉化")
 
--- Close button
+-- 关闭按钮
 local closeBtn = CreateFrame("Button", nil, configFrame, "UIPanelCloseButton")
 closeBtn:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -5, -5)
 closeBtn:SetScript("OnClick", function()
     configFrame:Hide()
 end)
 
--- ESC to close
+-- ESC关闭窗口
 tinsert(UISpecialFrames, "WoWTranslateConfigFrame")
 
 -- ============================================================================
--- UI ELEMENTS STORAGE
+-- 界面元素存储
 -- ============================================================================
 configFrame.elements = {}
 
 -- ============================================================================
--- HELPER: Create Section Header
+-- 辅助函数：创建分区标题
 -- ============================================================================
 local function CreateHeader(text, yPos)
     local header = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -134,16 +134,16 @@ local function CreateHeader(text, yPos)
 end
 
 -- ============================================================================
--- HELPER: Create Checkbox at specific position
+-- 辅助函数：在指定位置创建复选框
 -- ============================================================================
 local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
-    -- Create a wrapper frame like the language selector does
+    -- 创建包裹框架，与语言选择器保持一致
     local wrapper = CreateFrame("Frame", nil, configFrame)
     wrapper:SetPoint("TOPLEFT", configFrame, "TOPLEFT", xPos, yPos)
     wrapper:SetWidth(200)
     wrapper:SetHeight(22)
 
-    -- Store config on wrapper (same pattern as language selector)
+    -- 在包裹框架上存储配置项（与语言选择器相同格式）
     wrapper.configKey = configKey
     wrapper.subKey = subKey
 
@@ -155,16 +155,16 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
     text:SetText(label)
 
     cb:SetScript("OnClick", function()
-        -- Use GetParent() like language selector does
+        -- 使用GetParent()，与语言选择器逻辑一致
         local parent = this:GetParent()
         local key = parent.configKey
         local sub = parent.subKey
 
-        -- GetChecked() returns 1 or nil in WoW 1.12
+        -- 魔兽1.12版本中GetChecked()返回1或空值
         local isChecked = this:GetChecked()
         local enabled = (isChecked and true) or false
 
-        -- Use the global toggle functions for immediate effect
+        -- 使用全局开关函数实现即时生效
         if key == "translateNameplates" then
             WoWTranslate_SetTranslateNameplates(enabled)
             WoWTranslate_TempConfig.translateNameplates = enabled
@@ -199,7 +199,7 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
             end
             WoWTranslate_TempConfig.incomingChannels[sub] = enabled
         else
-            -- Fallback for any other settings
+            -- 其他设置项备用逻辑
             if sub then
                 if not WoWTranslate_TempConfig[key] then
                     WoWTranslate_TempConfig[key] = {}
@@ -216,13 +216,13 @@ local function CreateCheckbox(label, xPos, yPos, configKey, subKey)
         end
     end)
 
-    -- Return the checkbox (not wrapper) so SetChecked works
+    -- 返回复选框（非包裹框架），确保SetChecked正常工作
     cb.wrapper = wrapper
     return cb
 end
 
 -- ============================================================================
--- HELPER: Create Language Selector
+-- 辅助函数：创建语言选择器
 -- ============================================================================
 local function CreateLangSelector(label, xPos, yPos, configKey)
     local frame = CreateFrame("Frame", nil, configFrame)
@@ -246,7 +246,7 @@ local function CreateLangSelector(label, xPos, yPos, configKey)
     display:SetPoint("LEFT", leftBtn, "RIGHT", 10, 0)
     display:SetWidth(85)
     display:SetJustifyH("CENTER")
-    display:SetText("Language")
+    display:SetText("语言")
 
     local rightBtn = CreateFrame("Button", nil, frame)
     rightBtn:SetPoint("LEFT", display, "RIGHT", 10, 0)
@@ -281,7 +281,7 @@ local function CreateLangSelector(label, xPos, yPos, configKey)
 end
 
 -- ============================================================================
--- BUILD UI
+-- 构建界面
 -- ============================================================================
 
 local Y_IN_HEADER    = -50
@@ -317,88 +317,87 @@ local Y_SP_HEADER    = -679
 local Y_SP_ROW1      = -701
 local Y_SP_ROW2      = -723
 
--- Incoming Translation Section
-CreateHeader("Incoming Translation (Chat -> You)", Y_IN_HEADER)
-configFrame.elements.inEnabled     = CreateCheckbox("Enable Incoming Translation", 25,  Y_IN_ENABLE, "enabled", nil)
-configFrame.elements.afkDisable    = CreateCheckbox("Disable while AFK",          270,  Y_IN_ENABLE, "disableWhileAfk", nil)
-configFrame.elements.translateSystem = CreateCheckbox("Translate system/emotes",  25,  Y_IN_NAMES,  "translateSystemMessages", nil)
-configFrame.elements.inTo          = CreateLangSelector("To:", 25, Y_IN_LANG, "incomingToLang")
+-- 接收翻译设置区
+CreateHeader("接收翻译（他人聊天→你）", Y_IN_HEADER)
+configFrame.elements.inEnabled     = CreateCheckbox("启用接收翻译", 25,  Y_IN_ENABLE, "enabled", nil)
+configFrame.elements.afkDisable    = CreateCheckbox("暂离时自动关闭",          270,  Y_IN_ENABLE, "disableWhileAfk", nil)
+configFrame.elements.translateSystem = CreateCheckbox("翻译系统/表情消息",  25,  Y_IN_NAMES,  "translateSystemMessages", nil)
+configFrame.elements.inTo          = CreateLangSelector("翻译为：", 25, Y_IN_LANG, "incomingToLang")
 
 local roleInfoText = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 roleInfoText:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -20, Y_IN_LANG - 31)
-roleInfoText:SetText("T = tank,  N = healer,  D = dps")
+roleInfoText:SetText("T = 坦克,  N = 治疗,  D = 输出")
 roleInfoText:SetTextColor(0.2, 1, 0.2)
 roleInfoText:SetFont("Fonts\\FRIZQT__.TTF", 9, "ITALIC")
 
 local otherInfoText = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 otherInfoText:SetPoint("TOPRIGHT", configFrame, "TOPRIGHT", -20, Y_IN_LANG - 51)
-otherInfoText:SetText("M, MM , MMM+ = Whisper")
+otherInfoText:SetText("M, MM , MMM+ = 密语")
 otherInfoText:SetTextColor(1, 0, 1)
 otherInfoText:SetFont("Fonts\\FRIZQT__.TTF", 9, "ITALIC")
 
--- Source Language Selection
+-- 源语言选择
 local srcLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 srcLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_SRC_LABEL)
-srcLabel:SetText("Translate incoming from:")
+srcLabel:SetText("翻译以下来源语言：")
 
-configFrame.elements.srcZH = CreateCheckbox("Chinese",  25,  Y_SRC_ROW, "enabledSourceLangs", "zh")
-configFrame.elements.srcJA = CreateCheckbox("Japanese", 115, Y_SRC_ROW, "enabledSourceLangs", "ja")
-configFrame.elements.srcKO = CreateCheckbox("Korean",   210, Y_SRC_ROW, "enabledSourceLangs", "ko")
-configFrame.elements.srcRU = CreateCheckbox("Russian",  300, Y_SRC_ROW, "enabledSourceLangs", "ru")
-configFrame.elements.srcEN = CreateCheckbox("English",  390, Y_SRC_ROW, "enabledSourceLangs", "en")
+configFrame.elements.srcZH = CreateCheckbox("中文",  25,  Y_SRC_ROW, "enabledSourceLangs", "zh")
+configFrame.elements.srcJA = CreateCheckbox("日文", 115, Y_SRC_ROW, "enabledSourceLangs", "ja")
+configFrame.elements.srcKO = CreateCheckbox("韩文",   210, Y_SRC_ROW, "enabledSourceLangs", "ko")
+configFrame.elements.srcRU = CreateCheckbox("俄文",  300, Y_SRC_ROW, "enabledSourceLangs", "ru")
+configFrame.elements.srcEN = CreateCheckbox("英文",  390, Y_SRC_ROW, "enabledSourceLangs", "en")
 
--- Incoming Channels Section
+-- 接收频道设置
 local inChLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 inChLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_IN_CH_LABEL)
-inChLabel:SetText("Translate Incoming Channels:")
+inChLabel:SetText("翻译接收频道：")
 
--- Row 1: Say, Yell, Whisper, Party, Guild
-configFrame.elements.inChSay     = CreateCheckbox("Say",          25,  Y_IN_CH_ROW1, "incomingChannels", "SAY")
-configFrame.elements.inChYell    = CreateCheckbox("Yell",        115,  Y_IN_CH_ROW1, "incomingChannels", "YELL")
-configFrame.elements.inChWhisper = CreateCheckbox("Whisper",     205,  Y_IN_CH_ROW1, "incomingChannels", "WHISPER")
-configFrame.elements.inChParty   = CreateCheckbox("Party",       310,  Y_IN_CH_ROW1, "incomingChannels", "PARTY")
-configFrame.elements.inChGuild   = CreateCheckbox("Guild",       405,  Y_IN_CH_ROW1, "incomingChannels", "GUILD")
+-- 第一行：说、大喊、密语、小队、公会
+configFrame.elements.inChSay     = CreateCheckbox("说",          25,  Y_IN_CH_ROW1, "incomingChannels", "SAY")
+configFrame.elements.inChYell    = CreateCheckbox("大喊",        115,  Y_IN_CH_ROW1, "incomingChannels", "YELL")
+configFrame.elements.inChWhisper = CreateCheckbox("密语",     205,  Y_IN_CH_ROW1, "incomingChannels", "WHISPER")
+configFrame.elements.inChParty   = CreateCheckbox("小队",       310,  Y_IN_CH_ROW1, "incomingChannels", "PARTY")
+configFrame.elements.inChGuild   = CreateCheckbox("公会",       405,  Y_IN_CH_ROW1, "incomingChannels", "GUILD")
 
--- Row 2: Raid, English, Battleground, World/Local, Hardcore
-configFrame.elements.inChRaid    = CreateCheckbox("Raid",         25,  Y_IN_CH_ROW2, "incomingChannels", "RAID")
-configFrame.elements.inChEnglish = CreateCheckbox("English",     115,  Y_IN_CH_ROW2, "incomingChannels", "ENGLISH")
-configFrame.elements.inChBG      = CreateCheckbox("Battleground", 210, Y_IN_CH_ROW2, "incomingChannels", "BATTLEGROUND")
-configFrame.elements.inChChannel = CreateCheckbox("World/Local",  315, Y_IN_CH_ROW2, "incomingChannels", "CHANNEL")
-configFrame.elements.inChHC      = CreateCheckbox("Hardcore",     415, Y_IN_CH_ROW2, "incomingChannels", "HARDCORE")
+-- 第二行：团队、英文、战场、世界/本地、硬核
+configFrame.elements.inChRaid    = CreateCheckbox("团队",         25,  Y_IN_CH_ROW2, "incomingChannels", "RAID")
+configFrame.elements.inChEnglish = CreateCheckbox("英文",     115,  Y_IN_CH_ROW2, "incomingChannels", "ENGLISH")
+configFrame.elements.inChBG      = CreateCheckbox("战场", 210, Y_IN_CH_ROW2, "incomingChannels", "BATTLEGROUND")
+configFrame.elements.inChChannel = CreateCheckbox("世界/本地",  315, Y_IN_CH_ROW2, "incomingChannels", "CHANNEL")
+configFrame.elements.inChHC      = CreateCheckbox("硬核",     415, Y_IN_CH_ROW2, "incomingChannels", "HARDCORE")
 
--- Outgoing Translation Section
-CreateHeader("Outgoing Translation (You -> Chat)", Y_OUT_HEADER)
-configFrame.elements.outEnabled   = CreateCheckbox("Enable Outgoing Translation",  25,  Y_OUT_ENABLE, "outgoingEnabled",       nil)
-configFrame.elements.outPrefix    = CreateCheckbox("Send prefix with translation",  210, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
-configFrame.elements.outShowBtn   = CreateCheckbox("Toggle Button",                 410, Y_OUT_ENABLE, "showOutgoingButton",    nil)
-configFrame.elements.outFrom    = CreateLangSelector("From:", 25,  Y_OUT_LANG, "outgoingFromLang")
-configFrame.elements.outTo      = CreateLangSelector("To:",  215,  Y_OUT_LANG, "outgoingToLang")
+-- 发送翻译设置区
+CreateHeader("发送翻译（你→聊天）", Y_OUT_HEADER)
+configFrame.elements.outEnabled   = CreateCheckbox("启用发送翻译",  25,  Y_OUT_ENABLE, "outgoingEnabled",       nil)
+configFrame.elements.outPrefix    = CreateCheckbox("翻译内容添加前缀",  210, Y_OUT_ENABLE, "outgoingPrefixEnabled", nil)
+configFrame.elements.outShowBtn   = CreateCheckbox("显示开关按钮",                 410, Y_OUT_ENABLE, "showOutgoingButton",    nil)
+configFrame.elements.outFrom    = CreateLangSelector("原文语言：", 25,  Y_OUT_LANG, "outgoingFromLang")
+configFrame.elements.outTo      = CreateLangSelector("翻译为：",  215,  Y_OUT_LANG, "outgoingToLang")
 
--- Outgoing Channels Section
+-- 发送频道设置
 local chLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 chLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_CH_LABEL)
-chLabel:SetText("Outgoing Channels:")
+chLabel:SetText("发送翻译频道：")
 
--- Row 1: Whisper, Party, Say, Guild, Raid
-configFrame.elements.chWhisper = CreateCheckbox("Whisper",  25,  Y_CH_ROW1, "outgoingChannels", "WHISPER")
-configFrame.elements.chParty   = CreateCheckbox("Party",   115,  Y_CH_ROW1, "outgoingChannels", "PARTY")
-configFrame.elements.chSay     = CreateCheckbox("Say",     210,  Y_CH_ROW1, "outgoingChannels", "SAY")
-configFrame.elements.chGuild   = CreateCheckbox("Guild",   300,  Y_CH_ROW1, "outgoingChannels", "GUILD")
-configFrame.elements.chRaid    = CreateCheckbox("Raid",    390,  Y_CH_ROW1, "outgoingChannels", "RAID")
+-- 第一行：密语、小队、说、公会、团队
+configFrame.elements.chWhisper = CreateCheckbox("密语",  25,  Y_CH_ROW1, "outgoingChannels", "WHISPER")
+configFrame.elements.chParty   = CreateCheckbox("小队",   115,  Y_CH_ROW1, "outgoingChannels", "PARTY")
+configFrame.elements.chSay     = CreateCheckbox("说",     210,  Y_CH_ROW1, "outgoingChannels", "SAY")
+configFrame.elements.chGuild   = CreateCheckbox("公会",   300,  Y_CH_ROW1, "outgoingChannels", "GUILD")
+configFrame.elements.chRaid    = CreateCheckbox("团队",    390,  Y_CH_ROW1, "outgoingChannels", "RAID")
 
--- Row 2: Yell, English, Battleground, World/Local, Hardcore
-configFrame.elements.chYell    = CreateCheckbox("Yell",         25,  Y_CH_ROW2, "outgoingChannels", "YELL")
-configFrame.elements.chEnglish = CreateCheckbox("English",     115,  Y_CH_ROW2, "outgoingChannels", "ENGLISH")
-configFrame.elements.chBG      = CreateCheckbox("Battleground", 210, Y_CH_ROW2, "outgoingChannels", "BATTLEGROUND")
-configFrame.elements.chChannel = CreateCheckbox("World/Local",  315, Y_CH_ROW2, "outgoingChannels", "CHANNEL")
-configFrame.elements.chHC      = CreateCheckbox("Hardcore",     415, Y_CH_ROW2, "outgoingChannels", "HARDCORE")
+-- 第二行：大喊、英文、战场、世界/本地、硬核
+configFrame.elements.chYell    = CreateCheckbox("大喊",         25,  Y_CH_ROW2, "outgoingChannels", "YELL")
+configFrame.elements.chEnglish = CreateCheckbox("英文",     115,  Y_CH_ROW2, "outgoingChannels", "ENGLISH")
+configFrame.elements.chBG      = CreateCheckbox("战场", 210, Y_CH_ROW2, "outgoingChannels", "BATTLEGROUND")
+configFrame.elements.chChannel = CreateCheckbox("世界/本地",  315, Y_CH_ROW2, "outgoingChannels", "CHANNEL")
+configFrame.elements.chHC      = CreateCheckbox("硬核",     415, Y_CH_ROW2, "outgoingChannels", "HARDCORE")
 
--- Translation Color Section — all controls on one line.
--- Frames MUST anchor to configFrame (not to FontStrings) in WoW 1.12;
--- FontStrings may anchor to Frames freely.
+-- 翻译文字颜色设置 — 所有控件在同一行
+-- 魔兽1.12版本中，框架必须锚定到主窗口（而非文字）；文字可自由锚定到框架
 local colorSectionLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 colorSectionLabel:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_COLOR)
-colorSectionLabel:SetText("Translation text color:")
+colorSectionLabel:SetText("翻译文字颜色：")
 
 local colorSwatch = CreateFrame("Button", "WoWTranslateColorSwatch", configFrame)
 colorSwatch:SetWidth(30)
@@ -415,13 +414,13 @@ colorSwatch:SetBackdropColor(1, 1, 1)
 
 local colorSwatchLabel = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 colorSwatchLabel:SetPoint("LEFT", colorSwatch, "RIGHT", 6, 0)
-colorSwatchLabel:SetText("(click to pick)")
+colorSwatchLabel:SetText("(点击选择)")
 
 local colorDefaultBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 colorDefaultBtn:SetWidth(70)
 colorDefaultBtn:SetHeight(18)
 colorDefaultBtn:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 322, Y_COLOR - 2)
-colorDefaultBtn:SetText("Default")
+colorDefaultBtn:SetText("默认颜色")
 
 local function ApplyTranslationColor(hex)
     WoWTranslate_TempConfig.translationColor = hex
@@ -469,43 +468,43 @@ end)
 
 configFrame.elements.colorSwatch = colorSwatch
 
-configFrame.elements.colorFollow = CreateCheckbox("Follow channel color", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
+configFrame.elements.colorFollow = CreateCheckbox("跟随频道颜色", 25, Y_COLOR_FOLLOW, "translationColorFollow", nil)
 
--- Experimental Section
+-- 实验性功能
 local expHeader = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 expHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_EXP_HEADER)
-expHeader:SetText("Experimental:")
+expHeader:SetText("实验性功能：")
 expHeader:SetTextColor(1, 0.5, 0)
 
-configFrame.elements.replaceMode      = CreateCheckbox("Replace original with translation", 25,  Y_EXP_ROW, "replaceMode", nil)
-configFrame.elements.translateGF      = CreateCheckbox("Translate Group Finder",           270, Y_EXP_ROW, "translateGroupFinder", nil)
+configFrame.elements.replaceMode      = CreateCheckbox("替换原文显示翻译", 25,  Y_EXP_ROW, "replaceMode", nil)
+configFrame.elements.translateGF      = CreateCheckbox("翻译组队查找器",           270, Y_EXP_ROW, "translateGroupFinder", nil)
 
--- Name Translation Section
-CreateHeader("Name Translation:", Y_NAME_HEADER)
-configFrame.elements.translateNames  = CreateCheckbox("Sender names (chat/tooltip)", 25,  Y_NAME_ROW, "translatePlayerNames", nil)
-configFrame.elements.translateGuilds = CreateCheckbox("Guild names (tooltip)",       290, Y_NAME_ROW, "translateGuildNames", nil)
+-- 名字翻译设置
+CreateHeader("名字翻译：", Y_NAME_HEADER)
+configFrame.elements.translateNames  = CreateCheckbox("发送者名字（聊天/鼠标提示）", 25,  Y_NAME_ROW, "translatePlayerNames", nil)
+configFrame.elements.translateGuilds = CreateCheckbox("公会名字（鼠标提示）",       290, Y_NAME_ROW, "translateGuildNames", nil)
 
--- ShaguPlates Section
+-- ShaguPlates插件兼容设置
 local spHeader = configFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 spHeader:SetPoint("TOPLEFT", configFrame, "TOPLEFT", 25, Y_SP_HEADER)
-spHeader:SetText("ShaguPlates:")
+spHeader:SetText("姓名板插件(ShaguPlates)：")
 spHeader:SetTextColor(0, 1, 1)
 
-configFrame.elements.translateNP    = CreateCheckbox("Translate Nameplates",        25,  Y_SP_ROW1, "translateNameplates",   nil)
-configFrame.elements.npClassColor   = CreateCheckbox("Class-colored names",         290, Y_SP_ROW1, "playerNameClassColor",  nil)
-configFrame.elements.npGuildOOC     = CreateCheckbox("Guild (out of combat)",        25,  Y_SP_ROW2, "nameplateGuildOOC",     nil)
-configFrame.elements.npHideHealth   = CreateCheckbox("Hide healthbar (out of combat)", 290, Y_SP_ROW2, "nameplateHideHealthOOC", nil)
+configFrame.elements.translateNP    = CreateCheckbox("翻译姓名板",        25,  Y_SP_ROW1, "translateNameplates",   nil)
+configFrame.elements.npClassColor   = CreateCheckbox("名字显示职业颜色",         290, Y_SP_ROW1, "playerNameClassColor",  nil)
+configFrame.elements.npGuildOOC     = CreateCheckbox("脱战时显示公会",        25,  Y_SP_ROW2, "nameplateGuildOOC",     nil)
+configFrame.elements.npHideHealth   = CreateCheckbox("脱战时隐藏血条", 290, Y_SP_ROW2, "nameplateHideHealthOOC", nil)
 
--- Bottom Buttons
+-- 底部按钮
 local clearBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 clearBtn:SetPoint("BOTTOMLEFT", configFrame, "BOTTOMLEFT", 25, 12)
 clearBtn:SetWidth(120)
 clearBtn:SetHeight(26)
-clearBtn:SetText("Clear Cache")
+clearBtn:SetText("清空缓存")
 clearBtn:SetScript("OnClick", function()
     if WoWTranslate_CacheClear then
         WoWTranslate_CacheClear()
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[WoWTranslate] Cache cleared|r")
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[聊天翻译] 缓存已清空|r")
     end
 end)
 
@@ -513,15 +512,15 @@ local saveBtn = CreateFrame("Button", nil, configFrame, "UIPanelButtonTemplate")
 saveBtn:SetPoint("BOTTOMRIGHT", configFrame, "BOTTOMRIGHT", -25, 12)
 saveBtn:SetWidth(80)
 saveBtn:SetHeight(26)
-saveBtn:SetText("Save")
+saveBtn:SetText("保存")
 saveBtn:SetScript("OnClick", function()
     SaveTempConfig()
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate] Settings saved!|r")
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[聊天翻译] 设置已保存！|r")
     configFrame:Hide()
 end)
 
 -- ============================================================================
--- REFRESH UI FROM CONFIG
+-- 从配置刷新界面
 -- ============================================================================
 local function RefreshUI()
     local e = configFrame.elements
@@ -554,7 +553,7 @@ local function RefreshUI()
     if e.outPrefix   then e.outPrefix:SetChecked(cfg.outgoingPrefixEnabled) end
     if e.outShowBtn  then e.outShowBtn:SetChecked(cfg.showOutgoingButton) end
 
-    -- Source language checkboxes
+    -- 源语言复选框
     local srcLangs = cfg.enabledSourceLangs or {}
     if e.srcZH then e.srcZH:SetChecked(srcLangs.zh) end
     if e.srcJA then e.srcJA:SetChecked(srcLangs.ja) end
@@ -572,7 +571,7 @@ local function RefreshUI()
         e.outTo.display:SetText(GetLanguageName(cfg.outgoingToLang or "zh"))
     end
 
-    -- Incoming channels
+    -- 接收频道
     local inCh = cfg.incomingChannels or {}
     if e.inChSay then e.inChSay:SetChecked(inCh.SAY) end
     if e.inChYell then e.inChYell:SetChecked(inCh.YELL) end
@@ -585,7 +584,7 @@ local function RefreshUI()
     if e.inChHC then e.inChHC:SetChecked(inCh.HARDCORE) end
     if e.inChEnglish then e.inChEnglish:SetChecked(inCh.ENGLISH) end
 
-    -- Outgoing channels
+    -- 发送频道
     local ch = cfg.outgoingChannels or {}
     if e.chWhisper then e.chWhisper:SetChecked(ch.WHISPER) end
     if e.chParty then e.chParty:SetChecked(ch.PARTY) end
@@ -600,7 +599,7 @@ local function RefreshUI()
 end
 
 -- ============================================================================
--- PUBLIC API
+-- 对外接口
 -- ============================================================================
 function WoWTranslate_ShowConfig()
     LoadTempConfig()
