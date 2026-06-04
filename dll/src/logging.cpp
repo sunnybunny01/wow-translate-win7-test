@@ -1,4 +1,4 @@
-// logging.cpp - Logging system for WoWTranslate
+// logging.cpp - Logging system for WoWTranslate (Baidu API Version)
 
 #include <windows.h>
 #include <string>
@@ -48,7 +48,7 @@ bool InitializeLogging() {
 
         // Write initialization message
         testFile << "\n" << string(60, '=') << "\n";
-        testFile << "WoWTranslate v0.1 initialized at " << GetCurrentTimestamp() << "\n";
+        testFile << "WoWTranslate (Baidu API Version) initialized at " << GetCurrentTimestamp() << "\n";
         testFile << string(60, '=') << "\n";
         testFile.close();
 
