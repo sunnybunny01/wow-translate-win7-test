@@ -505,3 +505,54 @@ void TranslationClient::WorkerThreadFunc() {
 
     LOG_INFO("Worker thread stopped");
 }
+
+    // 新增函数：动态获取当前 DLL 同级目录下的 wt_config.ini 绝对路径
+    string TranslationClient::GetConfigPath() {
+    char dllPath[MAX_PATH] = {0};
+    // 获取当前 DLL 的模块句柄并转换为路径
+    GetModuleFileNameA(GetModuleHandleA("WoWTranslate.dll"), dllPath, MAX_PATH);
+    string path(dllPath);
+    size_t pos = path.find_last_of("\\/");
+    if (pos != string::npos) {
+        // 将 WoWTranslate.dll 替换为 wt_config.ini
+        path = path.substr(0, pos + 1) + "wt_config.ini";
+    } else {
+        path = "wt_config.ini";
+    }
+    return path;
+}
+
+    // 新增函数：从 INI 文件读取配置
+    void TranslationClient::LoadConfig() {
+    string iniPath = GetConfigPath();
+    char appBuf[256] = {0};
+    char keyBuf[256] = {0};
+
+    // 利用 Windows API 读取 [BaiduAPI] 节点下的配置
+    GetPrivateProfileStringA("BaiduAPI", "AppID", "", appBuf, sizeof(appBuf), iniPath.c_str());
+    GetPrivateProfileStringA("BaiduAPI", "SecretKey", "", keyBuf, sizeof(keyBuf), iniPath.c_str());
+
+    m_appId = appBuf;
+    m_secretKey = keyBuf;
+
+    if (m_appId.empty() || m_secretKey.empty()) {
+        LOG_WARNING("Baidu API Key is missing or incomplete in wt_config.ini");
+    } else {
+        LOG_INFO("Baidu API Key loaded successfully from INI");
+    }
+}
+
+    // 新增函数：将配置写入 INI 文件
+    void TranslationClient::SaveConfig(const string& appId, const string& secretKey) {
+    string iniPath = GetConfigPath();
+    
+    // 利用 Windows API 写入配置
+    WritePrivateProfileStringA("BaiduAPI", "AppID", appId.c_str(), iniPath.c_str());
+    WritePrivateProfileStringA("BaiduAPI", "SecretKey", secretKey.c_str(), iniPath.c_str());
+
+    // 写入成功后刷新当前内存中的值
+    m_appId = appId;
+    m_secretKey = secretKey;
+    
+    LOG_INFO("Baidu API Key updated and saved to INI");
+}
