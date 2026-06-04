@@ -17,7 +17,7 @@ local HEALTH_CHECK_INTERVAL = 60  -- Re-ping DLL every 60s; wakes HTTP client af
 local lastCallbackError = nil     -- last error captured from a pcall'd callback
 
 -- Backoff state: tracks consecutive "API error" responses (the error the DLL
--- returns when Google's response body can't be parsed — the most common cause is
+-- returns when bing's response body can't be parsed — the most common cause is
 -- a 429 rate-limit page that contains no [[[...]] translation array).
 -- "network error" and "timeout" are NOT counted — they are transient and shouldn't
 -- suppress future requests.  Three consecutive API errors trigger a backoff.
@@ -245,7 +245,7 @@ local function PollTranslations()
                         -- Successful response: reset everything.
                         consecutiveApiErrors = 0
                         rateLimitBackoff     = 15
-                        -- Google Translate sometimes inserts a space after an apostrophe
+                        -- bing Translate sometimes inserts a space after an apostrophe
                         -- when translating from languages that have no contractions (e.g. Chinese),
                         -- producing "doesn' t" or "won'  t".  Strip the extra space(s).
                         translation = string.gsub(translation, "'%s+(%a)", "'%1")
