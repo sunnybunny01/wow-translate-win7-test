@@ -1,5 +1,5 @@
 // lua_interface.cpp - Lua interface for WoWTranslate
-// Handles DLL communication and async translation via UnitXP hook
+// Handles DLL communication and async translation via UnitXP hook (Baidu API Version)
 
 #include <windows.h>
 #include <string>
@@ -117,6 +117,7 @@ bool lua_isstring(void* L, int index) {
 // Main WoWTranslate command handler
 // Commands:
 //   UnitXP("WoWTranslate", "ping") -> "pong"
+//   UnitXP("WoWTranslate", "wt_key:appId:secretKey") -> "ok" or "error|..."
 //   UnitXP("WoWTranslate", "translate_async", requestId, text, [sourceLang], [targetLang]) -> "ok" or "error|..."
 //   UnitXP("WoWTranslate", "poll") -> "requestId|translation|error" or ""
 //   UnitXP("WoWTranslate", "status") -> status string
@@ -130,50 +131,45 @@ int __fastcall detoured_UnitXP(void* L) {
             if (cmd == "WoWTranslate") {
                 LOG_DEBUG("WoWTranslate command intercepted");
                 
-            // --- 新增：拦截并处理 wt_key 配置指令 ---
-            if (lua_gettop(L) >= 2) {
-                string payload{ lua_tostring(L, 2) };
-                
-                // 判断是否是我们的 key 配置指令
-                if (payload.rfind("wt_key:", 0) == 0) {
-                    size_t firstColon = payload.find(':');
-                    size_t secondColon = payload.find(':', firstColon + 1);
-
-                    if (firstColon != string::npos && secondColon != string::npos) {
-                        string appId = payload.substr(firstColon + 1, secondColon - firstColon - 1);
-                        string secretKey = payload.substr(secondColon + 1);
-
-                        // 调用第一步写的保存函数
-                        if (g_translator) {
-                            g_translator->SaveConfig(appId, secretKey);
-                            LOG_INFO("Received new Baidu API Key from Lua UI");
-                        }
-                    }
-                    
-                    // 指令已处理，不再进入下面的翻译逻辑，直接返回
-                    lua_pushstring(L, "ok");
-                    return 1; 
-                }
-            }
-            // --- 新增代码结束 ---
-
                 if (lua_gettop(L) >= 2) {
                     string subcmd{ lua_tostring(L, 2) };
 
-                    // PING - Check if DLL is loaded
+                    // 1. PING - Check if DLL is loaded
                     if (subcmd == "ping") {
                         lua_pushstring(L, "pong");
                         LOG_DEBUG("Ping -> Pong");
                         return 1;
                     }
 
-                    // VERSION - Get version string (Updated to Bing)
-                    else if (subcmd == "version") {
-                        lua_pushstring(L, "WoWTranslate v0.14 - Free translation via Microsoft Bing");
+                    // 2. WT_KEY CONFIG - 完美规整后的百度秘钥拦截逻辑
+                    else if (subcmd.rfind("wt_key:", 0) == 0) {
+                        size_t firstColon = subcmd.find(':');
+                        size_t secondColon = subcmd.find(':', firstColon + 1);
+
+                        if (firstColon != string::npos && secondColon != string::npos) {
+                            string appId = subcmd.substr(firstColon + 1, secondColon - firstColon - 1);
+                            string secretKey = subcmd.substr(secondColon + 1);
+
+                            if (g_translator) {
+                                g_translator->SaveConfig(appId, secretKey);
+                                LOG_INFO("Received and saved new Baidu API credentials from Lua UI");
+                                lua_pushstring(L, "ok");
+                            } else {
+                                lua_pushstring(L, "error|translator core dead");
+                            }
+                        } else {
+                            lua_pushstring(L, "error|invalid key format");
+                        }
                         return 1;
                     }
 
-                    // STATUS - Get current status
+                    // 3. VERSION - Updated to display Baidu backend reference
+                    else if (subcmd == "version") {
+                        lua_pushstring(L, "WoWTranslate v0.14 - Translation powered by Baidu API");
+                        return 1;
+                    }
+
+                    // 4. STATUS - Get current status
                     else if (subcmd == "status") {
                         string status = "WoWTranslate: DLL Active, Translator ";
                         status += (g_translator && g_translator->IsInitialized()) ? "Ready" : "Not Ready";
@@ -184,15 +180,12 @@ int __fastcall detoured_UnitXP(void* L) {
                         return 1;
                     }
 
-                    // TRANSLATE_ASYNC - Queue async translation request
-                    // Args: requestId, text, [sourceLang], [targetLang]
-                    // Optional language params default to zh->en for backward compatibility
+                    // 5. TRANSLATE_ASYNC - Queue async translation request
                     else if (subcmd == "translate_async") {
                         if (lua_gettop(L) >= 4) {
                             string requestId{ lua_tostring(L, 3) };
                             string text{ lua_tostring(L, 4) };
 
-                            // Optional language parameters (default zh->en for backward compat)
                             string sourceLang = "zh";
                             string targetLang = "en";
                             if (lua_gettop(L) >= 6) {
@@ -222,8 +215,7 @@ int __fastcall detoured_UnitXP(void* L) {
                         return 1;
                     }
 
-                    // POLL - Poll for completed translation
-                    // Returns: "requestId|translation|error" or ""
+                    // 6. POLL - Poll for completed translation
                     else if (subcmd == "poll") {
                         if (!g_translator) {
                             lua_pushstring(L, "");
@@ -232,7 +224,6 @@ int __fastcall detoured_UnitXP(void* L) {
 
                         string requestId, translation, error;
                         if (g_translator->PollResult(requestId, translation, error)) {
-                            // Format: requestId|translation|error
                             string result = requestId + "|" + translation + "|" + error;
                             lua_pushstring(L, result);
                             LOG_DEBUG("Poll returned: " + requestId);
@@ -242,13 +233,11 @@ int __fastcall detoured_UnitXP(void* L) {
                         return 1;
                     }
 
-                    // TRANSLATE (synchronous) - For testing
-                    // Args: text, [sourceLang], [targetLang]
+                    // 7. TRANSLATE (synchronous) - For testing
                     else if (subcmd == "translate") {
                         if (lua_gettop(L) >= 3) {
                             string text{ lua_tostring(L, 3) };
 
-                            // Optional language parameters (default zh->en for backward compat)
                             string sourceLang = "zh";
                             string targetLang = "en";
                             if (lua_gettop(L) >= 5) {
@@ -271,11 +260,12 @@ int __fastcall detoured_UnitXP(void* L) {
                                 string error = "error|";
                                 switch (tr) {
                                     case TranslationResult::NETWORK_ERROR: error += "network error"; break;
-                                    case TranslationResult::API_ERROR: error += "API error"; break;
-                                    case TranslationResult::ENCODING_ERROR: error += "encoding error"; break;
+                                    case TranslationResult::API_ERROR:     error += "API error"; break;
+                                    case TranslationResult::ENCODING_ERROR:error += "encoding error"; break;
                                     case TranslationResult::TIMEOUT_ERROR: error += "timeout"; break;
                                     case TranslationResult::INVALID_PARAMS: error += "invalid parameters"; break;
-                                    default: error += "unknown error"; break;
+                                    case TranslationResult::RATE_LIMITED:   error += "rate limited"; break; // 同步补全频率限制
+                                    default:                                error += "unknown error"; break;
                                 }
                                 lua_pushstring(L, error);
                             }
@@ -302,7 +292,6 @@ int __fastcall detoured_UnitXP(void* L) {
             return p_original_UnitXP(L);
         }
 
-        // Fallback - return 0 if no original function
         return 0;
 
     } catch (const exception& e) {
