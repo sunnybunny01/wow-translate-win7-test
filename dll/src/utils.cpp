@@ -65,7 +65,7 @@ string TrimString(const string& str) {
     return str.substr(start, end - start + 1);
 }
 
-// --- 新增：百度翻译 API 核心支撑函数 ---
+// --- 专门为百度翻译 API 扩展的工具函数 ---
 
 // 1. URL 编码 (UrlEncode)
 string UrlEncode(const string& str) {
@@ -120,15 +120,23 @@ string CalculateMD5(const string& str) {
     return md5str;
 }
 
-// 3. 游戏客户端编码 (ANSI) 转 百度API编码 (UTF-8)
+// 3. 游戏客户端编码 (GBK/ANSI) 转 百度API编码 (UTF-8)
 string AnsiToUtf8(const string& str) {
     if (str.empty()) return "";
     
-    // Step 1: ANSI -> UTF-16
-    int wlen = MultiByteToWideChar(CP_ACP, 0, str.data(), str.length(), NULL, 0);
-    if (wlen == 0) return "";
+    // 【强制修复】魔兽 1.12 汉化客户端底层死绑定 936 (GBK) 编码
+    // 优先使用 936 解析，避免加速器或海外系统将 CP_ACP 误判为西欧 1252 编码导致转换失败返回空串
+    UINT codePage = 936; 
+    int wlen = MultiByteToWideChar(codePage, 0, str.data(), str.length(), NULL, 0);
+    if (wlen == 0) {
+        // 如果 936 转换极其罕见地失败，降级使用当前系统全局 ANSI 页面
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, str.data(), str.length(), NULL, 0);
+        if (wlen == 0) return ""; 
+    }
+    
     wstring wstr(wlen, 0);
-    MultiByteToWideChar(CP_ACP, 0, str.data(), str.length(), &wstr[0], wlen);
+    MultiByteToWideChar(codePage, 0, str.data(), str.length(), &wstr[0], wlen);
 
     // Step 2: UTF-16 -> UTF-8
     int utf8len = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.length(), NULL, 0, NULL, NULL);
@@ -139,7 +147,7 @@ string AnsiToUtf8(const string& str) {
     return utf8str;
 }
 
-// 4. 百度API编码 (UTF-8) 转 游戏客户端编码 (ANSI)
+// 4. 百度API编码 (UTF-8) 转 游戏客户端编码 (GBK/ANSI)
 string Utf8ToAnsi(const string& str) {
     if (str.empty()) return "";
     
@@ -149,11 +157,18 @@ string Utf8ToAnsi(const string& str) {
     wstring wstr(wlen, 0);
     MultiByteToWideChar(CP_UTF8, 0, str.data(), str.length(), &wstr[0], wlen);
 
-    // Step 2: UTF-16 -> ANSI
-    int ansilen = WideCharToMultiByte(CP_ACP, 0, wstr.data(), wstr.length(), NULL, 0, NULL, NULL);
-    if (ansilen == 0) return "";
+    // Step 2: UTF-16 -> GBK/ANSI
+    // 同样优先转回 936 (GBK) 供魔兽客户端无错渲染，失败再降级使用系统的 CP_ACP
+    UINT codePage = 936;
+    int ansilen = WideCharToMultiByte(codePage, 0, wstr.data(), wstr.length(), NULL, 0, NULL, NULL);
+    if (ansilen == 0) {
+        codePage = CP_ACP;
+        ansilen = WideCharToMultiByte(codePage, 0, wstr.data(), wstr.length(), NULL, 0, NULL, NULL);
+        if (ansilen == 0) return "";
+    }
+    
     string ansistr(ansilen, 0);
-    WideCharToMultiByte(CP_ACP, 0, wstr.data(), wstr.length(), &ansistr[0], ansilen, NULL, NULL);
+    WideCharToMultiByte(codePage, 0, wstr.data(), wstr.length(), &ansistr[0], ansilen, NULL, NULL);
 
     return ansistr;
 }
