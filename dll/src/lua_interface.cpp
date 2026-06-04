@@ -129,6 +129,33 @@ int __fastcall detoured_UnitXP(void* L) {
             // Check if this is a WoWTranslate command
             if (cmd == "WoWTranslate") {
                 LOG_DEBUG("WoWTranslate command intercepted");
+                
+            // --- 新增：拦截并处理 wt_key 配置指令 ---
+            if (lua_gettop(L) >= 2) {
+                string payload{ lua_tostring(L, 2) };
+                
+                // 判断是否是我们的 key 配置指令
+                if (payload.rfind("wt_key:", 0) == 0) {
+                    size_t firstColon = payload.find(':');
+                    size_t secondColon = payload.find(':', firstColon + 1);
+
+                    if (firstColon != string::npos && secondColon != string::npos) {
+                        string appId = payload.substr(firstColon + 1, secondColon - firstColon - 1);
+                        string secretKey = payload.substr(secondColon + 1);
+
+                        // 调用第一步写的保存函数
+                        if (g_translator) {
+                            g_translator->SaveConfig(appId, secretKey);
+                            LOG_INFO("Received new Baidu API Key from Lua UI");
+                        }
+                    }
+                    
+                    // 指令已处理，不再进入下面的翻译逻辑，直接返回
+                    lua_pushstring(L, "ok");
+                    return 1; 
+                }
+            }
+            // --- 新增代码结束 ---
 
                 if (lua_gettop(L) >= 2) {
                     string subcmd{ lua_tostring(L, 2) };
