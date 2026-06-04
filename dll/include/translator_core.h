@@ -58,6 +58,14 @@ struct CacheEntry {
 
 class TranslationClient {
 private:
+    // 新增：成员变量，存储从 INI 读取的密钥
+    std::string m_appId;
+    std::string m_secretKey;
+
+    // 新增：内部获取 INI 绝对路径和加载配置的函数
+    std::string GetConfigPath();
+    void LoadConfig();
+
     HINTERNET hSession;
     HINTERNET hConnect;
     std::unordered_map<std::string, CacheEntry> cache;
@@ -86,6 +94,13 @@ private:
     void WorkerThreadFunc();
 
 public:
+    // 新增：允许外部（如 Lua 接口）调用保存配置
+    void SaveConfig(const std::string& appId, const std::string& secretKey);
+    
+    // 新增：获取当前的配置（供后面翻译引擎使用）
+    std::string GetAppID() const { return m_appId; }
+    std::string GetSecretKey() const { return m_secretKey; }
+
     TranslationClient();
     ~TranslationClient();
 
