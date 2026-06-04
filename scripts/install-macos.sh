@@ -1,5 +1,5 @@
 #!/bin/bash
-# WoWTranslate Installation Script for macOS
+# WoWTranslate Installation Script for macOS (Baidu API Version)
 # This script installs the addon and DLL to your WoW 1.12 client
 
 set -e
@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "============================================"
-echo "WoWTranslate Installer"
+echo "WoWTranslate Installer (Baidu API Version)"
 echo "============================================"
 echo ""
 
@@ -100,7 +100,8 @@ echo -e "${GREEN}Installation complete!${NC}"
 echo "============================================"
 echo ""
 echo "Next steps:"
-echo "1. Launch WoW (The new Bing Translator requires NO API Key!)"
+echo "1. Launch WoW (Baidu API Version loaded!)"
+echo "   * NOTE: Please ensure your Baidu AppID and SecretKey are configured."
 echo ""
 echo "2. In-game, check status:"
 echo "   /wt status"
