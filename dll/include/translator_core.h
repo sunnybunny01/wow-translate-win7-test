@@ -74,9 +74,11 @@ private:
     static const size_t MAX_CACHE_SIZE = 500;
 
     std::string UrlEncode(const std::string& text);
-    std::string HttpsGet(const std::string& path);
+    // Changed from HttpsGet to HttpsPost to support Bing Translate API
+    std::string HttpsPost(const std::string& path, const std::string& postData);
     std::string MapLangCode(const std::string& lang);
-    std::string ParseGoogleFreeResponse(const std::string& json);
+    // Changed from ParseGoogleFreeResponse to ParseBingResponse
+    std::string ParseBingResponse(const std::string& json);
     std::string GenerateCacheKey(const std::string& text,
                                  const std::string& sourceLang,
                                  const std::string& targetLang);
