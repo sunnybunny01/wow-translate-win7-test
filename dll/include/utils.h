@@ -1,15 +1,25 @@
 #pragma once
 
-#include <windows.h>
 #include <string>
-#include <vector>
 
-// Utility functions
-std::string GetCurrentTimestamp();
-std::string GetDllPath();
-std::vector<std::string> SplitString(const std::string& str, char delimiter);
-std::string TrimString(const std::string& str);
+// logging.h - Logging system interface for WoWTranslate (Baidu API Version)
+// Provides logging levels and macro wrappers for structured logging output
 
-// Memory utility functions
-bool IsValidMemoryAddress(void* addr);
-void* SafeGetProcAddress(HMODULE hModule, const char* procName);
+// Log levels
+enum class LogLevel {
+    Info = 0,
+    Warning = 1,
+    Error = 2,
+    Debug = 3
+};
+
+// Logging functions
+bool InitializeLogging();
+void CleanupLogging();
+void LogToFile(LogLevel level, const std::string& message);
+
+// Convenience macros
+#define LOG_INFO(msg) LogToFile(LogLevel::Info, msg)
+#define LOG_WARNING(msg) LogToFile(LogLevel::Warning, msg)
+#define LOG_ERROR(msg) LogToFile(LogLevel::Error, msg)
+#define LOG_DEBUG(msg) LogToFile(LogLevel::Debug, msg)
