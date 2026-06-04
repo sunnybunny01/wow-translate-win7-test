@@ -2,6 +2,9 @@
 
 #include <string>
 
+// logging.h - Logging system interface for WoWTranslate (Baidu API Version)
+// Provides logging levels and macro wrappers for structured logging output
+
 // Log levels
 enum class LogLevel {
     Info = 0,
