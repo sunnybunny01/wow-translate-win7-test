@@ -58,11 +58,11 @@ struct CacheEntry {
 
 class TranslationClient {
 private:
-    // 新增：成员变量，存储从 INI 读取的密钥
+    // 成员变量：存储从 INI 读取的百度 API 密钥
     std::string m_appId;
     std::string m_secretKey;
 
-    // 新增：内部获取 INI 绝对路径和加载配置的函数
+    // 内部获取 INI 绝对路径和加载配置的函数
     std::string GetConfigPath();
     void LoadConfig();
 
@@ -82,11 +82,12 @@ private:
     static const size_t MAX_CACHE_SIZE = 500;
 
     std::string UrlEncode(const std::string& text);
-    // Changed from HttpsGet to HttpsPost to support Bing Translate API
     std::string HttpsPost(const std::string& path, const std::string& postData);
     std::string MapLangCode(const std::string& lang);
-    // Changed from ParseGoogleFreeResponse to ParseBingResponse
-    std::string ParseBingResponse(const std::string& json);
+    
+    // 【关键修复】已由 ParseBingResponse 更换为标准的 Baidu 响应解析器
+    std::string ParseBaiduResponse(const std::string& json);
+    
     std::string GenerateCacheKey(const std::string& text,
                                  const std::string& sourceLang,
                                  const std::string& targetLang);
@@ -94,10 +95,10 @@ private:
     void WorkerThreadFunc();
 
 public:
-    // 新增：允许外部（如 Lua 接口）调用保存配置
+    // 允许外部（如 main.cpp 或导出的 Lua 接口）调用并保存配置
     void SaveConfig(const std::string& appId, const std::string& secretKey);
     
-    // 新增：获取当前的配置（供后面翻译引擎使用）
+    // 获取当前的配置（供翻译引擎内部鉴权使用）
     std::string GetAppID() const { return m_appId; }
     std::string GetSecretKey() const { return m_secretKey; }
 
