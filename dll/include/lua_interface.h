@@ -3,6 +3,9 @@
 #include <string>
 #include <cstdint>
 
+// lua_interface.h - Lua interface definitions for WoWTranslate
+// Handles Lua C API hooks and communication (Baidu API Version)
+
 // Lua C API function pointers (following UnitXP_SP3 pattern)
 typedef int(__fastcall* LUA_CFUNCTION)(void* L);
 typedef void(__fastcall* LUA_PUSHSTRING)(void* L, const char* s);
