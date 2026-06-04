@@ -164,7 +164,7 @@ function WoWTranslate_API.Translate(text, callback, fromLang)
 
     if not success then
         pendingRequests[requestId] = nil
-		pendingTexts[text] = nil 
+        pendingTexts[text] = nil 
         if callback then
             callback(nil, "DLL call failed: " .. tostring(err))
         end
@@ -226,7 +226,8 @@ local function PollTranslations()
                             rateLimitedUntil     = GetTime() + rateLimitBackoff
                             rateLimitBackoff     = math.min(rateLimitBackoff * 2, 300)
                             consecutiveApiErrors = 0
-                        elseif err == "API error" then
+                        -- 【核心匹配修复】：同时捕获原本的 "API error" 以及新版百度 C++ DLL 返回的 "API credentials error"
+                        elseif err == "API error" or err == "API credentials error" then
                             -- Generic parse failure: could be an undetected rate-limit
                             -- variant or a content-policy block.  Back off after
                             -- BACKOFF_TRIGGER consecutive hits as a safety net.
@@ -358,7 +359,7 @@ function WoWTranslate_API.TranslateOutgoing(text, callback)
 
     if not success then
         pendingRequests[requestId] = nil
-		pendingTexts[text] = nil 
+        pendingTexts[text] = nil 
         if callback then
             callback(nil, "DLL call failed: " .. tostring(err))
         end
