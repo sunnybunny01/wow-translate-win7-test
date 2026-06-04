@@ -1,8 +1,8 @@
 // translator_core.cpp - Translation functionality for WoWTranslate
-// Sends GET requests to translate.googleapis.com (client=gtx) — no API key required
+// Sends POST requests to cn.bing.com — Microsoft Bing Free Translation
 
 #include <windows.h>
-#include <wininet.h> // Changed from winhttp.h to wininet.h for Win7 proxy compatibility
+#include <wininet.h>
 #include <string>
 #include <algorithm>
 #include <sstream>
@@ -16,7 +16,7 @@
 #include "../include/logging.h"
 #include "../include/utils.h"
 
-#pragma comment(lib, "wininet.lib") // Ensure WinINet library is linked
+#pragma comment(lib, "wininet.lib")
 
 using namespace std;
 
@@ -41,68 +41,9 @@ static string ConvertCodepointToUTF8(unsigned int codepoint) {
     return result;
 }
 
-// Simple JSON parser for proxy server responses
+// Simple JSON parser
 class SimpleJsonParser {
 public:
-    static string extractField(const string& json, const string& fieldName) {
-        string searchKey = "\"" + fieldName + "\"";
-        size_t keyPos = json.find(searchKey);
-        if (keyPos == string::npos) {
-            return "";
-        }
-
-        size_t colonPos = json.find(":", keyPos + searchKey.length());
-        if (colonPos == string::npos) {
-            return "";
-        }
-
-        size_t start = colonPos + 1;
-        while (start < json.length() && (json[start] == ' ' || json[start] == '\t' || json[start] == '\n' || json[start] == '\r')) {
-            start++;
-        }
-
-        if (start >= json.length()) {
-            return "";
-        }
-
-        // Check if it's a string value (starts with quote)
-        if (json[start] == '"') {
-            start++;
-            size_t end = start;
-            while (end < json.length() && json[end] != '"') {
-                if (json[end] == '\\' && end + 1 < json.length()) {
-                    end += 2; // Skip escaped character
-                } else {
-                    end++;
-                }
-            }
-            return unescapeJson(json.substr(start, end - start));
-        }
-
-        // It's a number or boolean
-        size_t end = start;
-        while (end < json.length() && json[end] != ',' && json[end] != '}' && json[end] != '\n') {
-            end++;
-        }
-        string value = json.substr(start, end - start);
-        // Trim whitespace
-        while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r')) {
-            value.pop_back();
-        }
-        return value;
-    }
-
-    static double extractNumber(const string& json, const string& fieldName) {
-        string value = extractField(json, fieldName);
-        if (value.empty()) return -1;
-        try {
-            return stod(value);
-        } catch (...) {
-            return -1;
-        }
-    }
-
-private:
     static string unescapeJson(const string& input) {
         string result = input;
         size_t pos = 0;
@@ -150,7 +91,6 @@ private:
                 break;
             }
         }
-
         return result;
     }
 };
@@ -171,13 +111,13 @@ TranslationClient::~TranslationClient() {
 bool TranslationClient::Initialize() {
     if (initialized) Cleanup();
 
-    const std::string host = "translate.googleapis.com";
+    // Changed to Bing's China-friendly endpoint
+    const std::string host = "cn.bing.com";
     const int port = 443;
 
-    LOG_INFO("Initializing Google Free translation client (WinINet mode)");
+    LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode)");
 
-    // INTERNET_OPEN_TYPE_PRECONFIG tells WinINet to use the system/IE proxy configured by your game accelerator
-    hSession = InternetOpenW(L"WoWTranslate/1.0",
+    hSession = InternetOpenW(L"WoWTranslate/0.14",
                              INTERNET_OPEN_TYPE_PRECONFIG,
                              NULL,
                              NULL,
@@ -198,7 +138,7 @@ bool TranslationClient::Initialize() {
                                 static_cast<INTERNET_PORT>(port),
                                 NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to translate.googleapis.com via WinINet");
+        LOG_ERROR("Failed to connect to cn.bing.com via WinINet");
         InternetCloseHandle(hSession);
         hSession = nullptr;
         return false;
@@ -207,12 +147,11 @@ bool TranslationClient::Initialize() {
     running = true;
     workerThread = thread(&TranslationClient::WorkerThreadFunc, this);
     initialized = true;
-    LOG_INFO("Google Free translation client initialized successfully");
+    LOG_INFO("Microsoft Bing Free translation client initialized successfully");
     return true;
 }
 
 void TranslationClient::Cleanup() {
-    // Stop worker thread
     if (running) {
         running = false;
         if (workerThread.joinable()) {
@@ -277,37 +216,38 @@ void TranslationClient::CleanExpiredCache() {
     }
 }
 
+// Map Google Lang Codes to Microsoft Bing Lang Codes
 string TranslationClient::MapLangCode(const string& lang) {
-    if (lang == "zh") return "zh-CN";
-    // ja, ko, ru, en are already valid Google lang codes
+    if (lang == "zh" || lang == "zh-CN") return "zh-Hans"; // Simplified Chinese
+    if (lang == "zh-TW") return "zh-Hant"; // Traditional Chinese
     return lang;
 }
 
-string TranslationClient::HttpsGet(const string& path) {
+// Changed to POST for Bing Translate API
+string TranslationClient::HttpsPost(const string& path, const string& postData) {
     if (!hConnect) return "";
 
     wstring wPath(path.begin(), path.end());
 
     HINTERNET hRequest = HttpOpenRequestW(
-        hConnect, L"GET", wPath.c_str(), nullptr,
+        hConnect, L"POST", wPath.c_str(), nullptr,
         nullptr, nullptr,
         INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
 
     if (!hRequest) {
-        LOG_ERROR("Failed to open GET request via WinINet");
+        LOG_ERROR("Failed to open POST request via WinINet");
         return "";
     }
 
-    // Identify as a browser to avoid 403s
-    wstring headers = L"User-Agent: Mozilla/5.0\r\n";
-    HttpAddRequestHeadersW(hRequest, headers.c_str(), (DWORD)-1,
-                           HTTP_ADDREQ_FLAG_ADD | HTTP_ADDREQ_FLAG_REPLACE);
-
-    BOOL result = HttpSendRequestW(hRequest, nullptr, 0, nullptr, 0);
+    // Bing requires a valid User-Agent and proper Content-Type for POST body
+    wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n"
+                      L"User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36\r\n";
+    
+    BOOL result = HttpSendRequestW(hRequest, headers.c_str(), (DWORD)-1, 
+                                   (LPVOID)postData.c_str(), (DWORD)postData.length());
 
     string response;
     if (result) {
-        // Read HTTP status code
         DWORD statusCode = 0;
         DWORD statusLen  = sizeof(DWORD);
         HttpQueryInfoW(hRequest,
@@ -315,124 +255,94 @@ string TranslationClient::HttpsGet(const string& path) {
             &statusCode, &statusLen, NULL);
             
         if (statusCode == 429) {
-            LOG_WARNING("Rate limited by Google (HTTP 429)");
+            LOG_WARNING("Rate limited by Bing (HTTP 429)");
             InternetCloseHandle(hRequest);
             return "HTTP_429";
         }
 
-        // Read data stream sequentially using standard WinINet buffer loop
         char buffer[8192];
         DWORD bytesRead = 0;
         while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
             response.append(buffer, bytesRead);
         }
     } else {
-        LOG_ERROR("GET request failed: " + to_string(GetLastError()));
+        LOG_ERROR("POST request failed: " + to_string(GetLastError()));
     }
 
     InternetCloseHandle(hRequest);
     return response;
 }
 
-string TranslationClient::ParseGoogleFreeResponse(const string& json) {
-    string result;
+// New JSON Parser specifically for Bing's response
+string TranslationClient::ParseBingResponse(const string& json) {
+    // Bing format: [{"detectedLanguage":{...},"translations":[{"text":"translated_result","to":"zh-Hans"}]}]
+    size_t transPos = json.find("\"translations\"");
+    if (transPos == string::npos) return "";
 
-    // Find the start of the sentence array: [[[
-    size_t pos = json.find("[[[");
-    if (pos == string::npos) return "";
-    pos += 3; // now at opening " of first translated segment
+    size_t textKeyPos = json.find("\"text\"", transPos);
+    if (textKeyPos == string::npos) return "";
 
-    // Upper bound: the ]] that closes the outer sentence array
-    size_t sentencesEnd = json.find("]]", pos);
+    size_t colonPos = json.find(":", textKeyPos);
+    if (colonPos == string::npos) return "";
 
-    while (pos < json.size()) {
-        if (json[pos] != '"') break;
-        pos++; // skip opening "
+    size_t quoteStart = json.find("\"", colonPos);
+    if (quoteStart == string::npos) return "";
 
-        string segment;
-        while (pos < json.size() && json[pos] != '"') {
-            if (json[pos] == '\\' && pos + 1 < json.size()) {
-                pos++;
-                switch (json[pos]) {
-                    case '"':  segment += '"';  break;
-                    case '\\': segment += '\\'; break;
-                    case 'n':  segment += '\n'; break;
-                    case 'r':  segment += '\r'; break;
-                    case 't':  segment += '\t'; break;
-                    case 'u': {
-                        if (pos + 4 < json.size()) {
-                            string hex = json.substr(pos + 1, 4);
-                            try {
-                                unsigned int cp = stoul(hex, nullptr, 16);
-                                segment += ConvertCodepointToUTF8(cp);
-                                pos += 4;
-                            } catch (...) {}
-                        }
-                        break;
-                    }
-                    default: segment += json[pos]; break;
-                }
-            } else {
-                segment += json[pos];
-            }
-            pos++;
+    size_t quoteEnd = quoteStart + 1;
+    while (quoteEnd < json.length()) {
+        if (json[quoteEnd] == '"' && json[quoteEnd - 1] != '\\') {
+            break;
         }
-        result += segment;
-        if (pos < json.size()) pos++; // skip closing "
-
-        // Find next inner array: ,["  within the sentence array bounds
-        size_t nextInner = json.find(",[\"", pos);
-        if (nextInner == string::npos ||
-            (sentencesEnd != string::npos && nextInner > sentencesEnd)) break;
-        pos = nextInner + 2; // point at the opening " of next segment
+        quoteEnd++;
     }
 
-    return result;
+    if (quoteEnd >= json.length()) return "";
+
+    string extracted = json.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+    return SimpleJsonParser::unescapeJson(extracted);
 }
 
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
-                                                    const string& sourceLang,
-                                                    const string& targetLang) {
+                                                   const string& sourceLang,
+                                                   const string& targetLang) {
     if (!initialized) return TranslationResult::INVALID_PARAMS;
     if (text.empty())  return TranslationResult::INVALID_PARAMS;
 
-    // DLL-side cache check
     string cacheKey = GenerateCacheKey(text, sourceLang, targetLang);
     auto cacheIt = cache.find(cacheKey);
     if (cacheIt != cache.end() &&
         (GetTickCount() - cacheIt->second.timestamp) < CACHE_EXPIRY_MS) {
         result = cacheIt->second.translation;
-        LOG_DEBUG("Cache hit: " + text.substr(0, 50));
         return TranslationResult::SUCCESS;
     }
 
     CleanExpiredCache();
 
-    // Build Google Free GET path
     string sl = MapLangCode(sourceLang);
     string tl = MapLangCode(targetLang);
-    string path = "/translate_a/single?client=gtx&sl=" + sl +
-                  "&tl=" + tl + "&dt=t&q=" + UrlEncode(text);
+    
+    // Bing POST path
+    string path = "/ttranslatev3?isVertical=1";
+    // Bing POST data body
+    string postData = "&text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
 
-    LOG_DEBUG("GET " + path.substr(0, 120));
+    LOG_DEBUG("POST " + path + " | Data: " + postData.substr(0, 100));
 
-    string response = HttpsGet(path);
+    string response = HttpsPost(path, postData);
 
     if (response == "HTTP_429") {
         return TranslationResult::RATE_LIMITED;
     }
 
     if (response.empty()) {
-        LOG_ERROR("Empty response from Google Free");
+        LOG_ERROR("Empty response from Bing Free");
         return TranslationResult::NETWORK_ERROR;
     }
 
-    LOG_DEBUG("Response: " + response.substr(0, 200));
-
-    string translation = ParseGoogleFreeResponse(response);
+    string translation = ParseBingResponse(response);
 
     if (translation.empty()) {
-        LOG_ERROR("Failed to parse Google Free response");
+        LOG_ERROR("Failed to parse Bing Free response");
         return TranslationResult::API_ERROR;
     }
 
@@ -473,7 +383,6 @@ bool TranslationClient::PollResult(string& requestId, string& translation, strin
     return true;
 }
 
-// Get count of pending requests
 size_t TranslationClient::GetPendingCount() {
     lock_guard<mutex> lock(requestMutex);
     return requestQueue.size();
