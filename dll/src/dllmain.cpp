@@ -1,5 +1,5 @@
 // dllmain.cpp - Main DLL entry point for WoWTranslate
-// Chinese to English translation for WoW 1.12
+// Chinese to English translation for WoW 1.12 (Powered by Baidu API)
 
 #include <windows.h>
 #include <string>
@@ -31,7 +31,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
 
         LOG_INFO("WoWTranslate: DLL_PROCESS_ATTACH");
-        LOG_INFO("Initializing WoWTranslate library v0.1...");
+        LOG_INFO("Initializing WoWTranslate library (Baidu API version)...");
 
         // Initialize translation client
         g_translator = std::make_unique<TranslationClient>();
@@ -41,9 +41,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             return FALSE;
         }
 
-        // Connect to Microsoft Bing Free endpoint immediately — no API key needed
+        // Initialize Baidu Translate client and load API keys from config
         if (!g_translator->Initialize()) {
-            LOG_WARNING("Translation client failed to initialize at load time");
+            LOG_WARNING("Translation client failed to initialize at load time. Check API keys or network.");
         }
 
         // Initialize Lua interface
