@@ -11,7 +11,7 @@
 #include <locale>
 #include <vector>
 #include <cstdio>
-#include <wincrypt.h> // Windows 底层加密 API (用于 MD5 签名)
+// #include <wincrypt.h> 移除，已交由 utils.cpp 统一处理 MD5
 
 #include "../include/translator_core.h"
 #include "../include/logging.h"
@@ -29,34 +29,6 @@
 #endif
 
 using namespace std;
-
-// =========================================================
-// 全局工具函数：MD5 签名 (利用 Windows 密码学 API 生成，免第三方库)
-// =========================================================
-static string GetMD5(const string& src) {
-    HCRYPTPROV hProv = 0;
-    HCRYPTHASH hHash = 0;
-    string hashStr = "";
-
-    if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-        if (CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
-            if (CryptHashData(hHash, (const BYTE*)src.c_str(), (DWORD)src.length(), 0)) {
-                BYTE rgbHash[16];
-                DWORD cbHash = 16;
-                if (CryptGetHashParam(hHash, HP_HASHVAL, rgbHash, &cbHash, 0)) {
-                    char hex[33];
-                    for (int i = 0; i < 16; i++) {
-                        snprintf(hex + i * 2, 3, "%02x", rgbHash[i]);
-                    }
-                    hashStr = hex;
-                }
-            }
-            CryptDestroyHash(hHash);
-        }
-        CryptReleaseContext(hProv, 0);
-    }
-    return hashStr;
-}
 
 // UTF-8 字符集转换辅助器
 static string ConvertCodepointToUTF8(unsigned int codepoint) {
@@ -215,22 +187,9 @@ void TranslationClient::Cleanup() {
     LOG_INFO("Baidu Translation Client Cleanup Complete");
 }
 
+// 【修复】重定向至全局 utils 的 UrlEncode，避免逻辑冲突
 string TranslationClient::UrlEncode(const string& text) {
-    ostringstream encoded;
-    encoded.fill('0');
-    encoded << hex;
-
-    for (unsigned char c : text) {
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            encoded << c;
-        } else {
-            encoded << uppercase;
-            encoded << '%' << setw(2) << static_cast<int>(c);
-            encoded << nouppercase;
-        }
-    }
-
-    return encoded.str();
+    return ::UrlEncode(text);
 }
 
 string TranslationClient::GenerateCacheKey(const string& text, const string& sourceLang, const string& targetLang) {
@@ -270,7 +229,6 @@ string TranslationClient::HttpsPost(const string& path, const string& postData) 
 
 // 精准解析百度官方返回的 JSON 数据流
 string TranslationClient::ParseBaiduResponse(const string& json) {
-    // 检查是否包含百度定义的错误码
     if (json.find("error_code") != string::npos) {
         size_t msgPos = json.find("\"error_msg\":\"");
         if (msgPos != string::npos) {
@@ -286,7 +244,6 @@ string TranslationClient::ParseBaiduResponse(const string& json) {
     string extractedResult = "";
     size_t pos = 0;
     
-    // 循环提取 trans_result 数组中所有的 "dst":"..." 字段值 (用于处理带多段换行的文本)
     while ((pos = json.find("\"dst\":\"", pos)) != string::npos) {
         pos += 7;
         size_t end = pos;
@@ -299,7 +256,7 @@ string TranslationClient::ParseBaiduResponse(const string& json) {
         if (end >= json.length()) break;
         
         if (!extractedResult.empty()) {
-            extractedResult += "\n"; // 保留原始段落换行结构
+            extractedResult += "\n";
         }
         extractedResult += json.substr(pos, end - pos);
         pos = end + 1;
@@ -308,13 +265,13 @@ string TranslationClient::ParseBaiduResponse(const string& json) {
     return SimpleJsonParser::unescapeJson(extractedResult);
 }
 
-// 核心功能重构：直接携带安全的 MD5 签名向百度服务器发起数据检索
+// 核心功能重构：彻底解决 GBK 与 UTF-8 的时空混乱问题
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
                                                    const string& sourceLang,
                                                    const string& targetLang) {
     if (!initialized || text.empty()) return TranslationResult::INVALID_PARAMS;
 
-    // 优先读取本地高频缓存，拦截重复请求以保护用户的免费配额
+    // 优先读取本地高频缓存 (原文是 GBK 格式)
     string cacheKey = GenerateCacheKey(text, sourceLang, targetLang);
     auto cacheIt = cache.find(cacheKey);
     if (cacheIt != cache.end() && (GetTickCount() - cacheIt->second.timestamp) < CACHE_EXPIRY_MS) {
@@ -323,6 +280,13 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     }
 
     CleanExpiredCache();
+
+    // 【致命修复 1】: 将魔兽世界的 GBK 文本强制转为 百度要求的 UTF-8
+    string utf8Text = AnsiToUtf8(text);
+    if (utf8Text.empty()) {
+        LOG_ERROR("Encoding Error: Cannot convert WoW client text to UTF-8");
+        return TranslationResult::ENCODING_ERROR;
+    }
 
     // 检查授权秘钥完整性
     if (m_appId.empty() || m_secretKey.empty()) {
@@ -335,11 +299,13 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     
     // 生成百度鉴权三要素：随机盐值 (Salt) 和安全签名 (Sign)
     string salt = to_string(GetTickCount());
-    string signSource = m_appId + text + salt + m_secretKey; // 拼接规则：appid+q+salt+securityKey
-    string md5Sign = GetMD5(signSource);
+    
+    // 【致命修复 2】: 签名必须使用 UTF-8 的文本进行拼接计算！否则必报 54001 鉴权失败！
+    string signSource = m_appId + utf8Text + salt + m_secretKey; 
+    string md5Sign = ::CalculateMD5(signSource); // 统一调用 utils 中的原生 MD5
 
-    // 构建符合万维网规范的 URL 编码表单参数
-    string postData = "q=" + UrlEncode(text) +
+    // 【致命修复 3】: URL Encode 必须对 UTF-8 的文本操作！防止乱码导致网络库死锁崩溃
+    string postData = "q=" + ::UrlEncode(utf8Text) +
                       "&from=" + sl +
                       "&to=" + tl +
                       "&appid=" + m_appId +
@@ -391,18 +357,25 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
         return TranslationResult::NETWORK_ERROR;
     }
 
-    // 解析过滤回传数据
-    string translation = ParseBaiduResponse(response);
+    // 解析过滤回传数据 (此时 translationUtf8 依然是 UTF-8 编码)
+    string translationUtf8 = ParseBaiduResponse(response);
 
-    if (translation.empty()) {
+    if (translationUtf8.empty()) {
         LOG_ERROR("Baidu Response parse failure. Raw payload: " + response.substr(0, 150));
         return TranslationResult::API_ERROR;
     }
 
-    // 写入本地高速缓存并交付结果
-    cache[cacheKey] = CacheEntry(translation);
-    result = translation;
-    LOG_DEBUG("Successfully Translated: " + text.substr(0, 20) + "... -> " + translation.substr(0, 30));
+    // 【致命修复 4】: 将百度返回的 UTF-8 结果转回魔兽客户端强制要求的 GBK 编码！防止游戏乱码白屏！
+    string translationAnsi = Utf8ToAnsi(translationUtf8);
+    if (translationAnsi.empty()) {
+        LOG_ERROR("Encoding Error: Cannot convert Baidu response to Game ANSI/GBK");
+        return TranslationResult::ENCODING_ERROR;
+    }
+
+    // 将符合魔兽规范的最终 GBK 文本写入本地高速缓存并交付
+    cache[cacheKey] = CacheEntry(translationAnsi);
+    result = translationAnsi;
+    LOG_DEBUG("Successfully Translated Text!");
     return TranslationResult::SUCCESS;
 }
 
