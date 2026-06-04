@@ -434,3 +434,23 @@ function WoWTranslate_API.GetPendingRequests()
     return info
 end
 
+-- 注册 /wt 斜杠命令
+SLASH_WOWTRANSLATE1 = "/wt"
+SlashCmdList["WOWTRANSLATE"] = function(msg)
+    -- 按空格分割玩家输入的字符串
+    -- 例如: /wt key 123456 789abc
+    local _, _, cmd, appid, secret = string.find(msg, "(%S+)%s+(%S+)%s+(%S+)")
+    
+    if cmd == "key" and appid and secret then
+        -- 通过 UnitXP 这个唯一通道将数据发给 C++
+        local payload = "wt_key:" .. appid .. ":" .. secret
+        UnitXP("WoWTranslate", payload)
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WoWTranslate]|r 密钥已下发，正在保存到 wt_config.ini...", 1, 1, 1)
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFFF00[WoWTranslate]|r 用法:", 1, 1, 1)
+        DEFAULT_CHAT_FRAME:AddMessage("输入 /wt key <AppID> <密钥> 来配置百度翻译", 1, 1, 1)
+    end
+end
+
+
