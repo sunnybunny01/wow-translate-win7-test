@@ -23,6 +23,11 @@
 #define FLAG_SECURE_PROTOCOL_TLS1_2 0x00000800
 #endif
 
+// 补全缺失的 WinINet TLS 选项标识符
+#ifndef INTERNET_OPTION_SECURE_PROTOCOLS
+#define INTERNET_OPTION_SECURE_PROTOCOLS 31
+#endif
+
 using namespace std;
 
 // 提取字符串中间内容的辅助函数 (用于提取Token)
