@@ -130,6 +130,9 @@ TranslationClient::~TranslationClient() {
 bool TranslationClient::Initialize() {
     if (initialized) Cleanup();
 
+    // 在初始化时，首先拉取本地 INI 配置
+    LoadConfig();
+
     // 【方案核心】回归中国直连域名，避免被加速器漏掉后无法解析或乱跳
     const std::string host = "cn.bing.com";
     const int port = 443;
