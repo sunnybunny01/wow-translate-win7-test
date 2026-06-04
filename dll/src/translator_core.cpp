@@ -1,5 +1,5 @@
 // translator_core.cpp - Translation functionality for WoWTranslate
-// Sends requests to www.bing.com — Microsoft Bing Free Translation (International/TLS1.2 Optimized)
+// Sends requests to cn.bing.com — Microsoft Bing Free Translation (Domestic & Cookie Optimized)
 
 #include <windows.h>
 #include <wininet.h>
@@ -18,19 +18,18 @@
 
 #pragma comment(lib, "wininet.lib")
 
-// 【优化方案 3】确保老旧编译环境下也能识别 Win7 的 TLS 1.2 标记
+// 【关键修复】确保老旧编译环境下也能识别 Win7 的 TLS 1.2 标记与 WinINet 选项
 #ifndef FLAG_SECURE_PROTOCOL_TLS1_2
 #define FLAG_SECURE_PROTOCOL_TLS1_2 0x00000800
 #endif
 
-// 补全缺失的 WinINet TLS 选项标识符
 #ifndef INTERNET_OPTION_SECURE_PROTOCOLS
 #define INTERNET_OPTION_SECURE_PROTOCOLS 31
 #endif
 
 using namespace std;
 
-// 提取字符串中间内容的辅助函数 (用于提取Token)
+// 提取字符串中间内容的辅助函数 (用于提取Token和Cookie)
 static string ExtractBetween(const string& str, const string& start, const string& end) {
     size_t s = str.find(start);
     if (s == string::npos) return "";
@@ -40,7 +39,7 @@ static string ExtractBetween(const string& str, const string& start, const strin
     return str.substr(s, e - s);
 }
 
-// UTF-8 codepoint encoder (file-scope for use in multiple places)
+// UTF-8 codepoint encoder
 static string ConvertCodepointToUTF8(unsigned int codepoint) {
     string result;
     if (codepoint <= 0x7F) {
@@ -131,13 +130,13 @@ TranslationClient::~TranslationClient() {
 bool TranslationClient::Initialize() {
     if (initialized) Cleanup();
 
-    // 【优化方案 1】全面切换为微软全球国际域名，完美适配加速器香港节点，避开 cn.bing.com 的严格审查
-    const std::string host = "www.bing.com";
+    // 【方案核心】回归中国直连域名，避免被加速器漏掉后无法解析或乱跳
+    const std::string host = "cn.bing.com";
     const int port = 443;
 
-    LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode - International)");
+    LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode - Domestic Optimized)");
 
-    // 伪装成真实的浏览器 User-Agent
+    // 伪装成真实的现代浏览器 User-Agent
     hSession = InternetOpenW(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                              INTERNET_OPEN_TYPE_PRECONFIG,
                              NULL,
@@ -148,7 +147,7 @@ bool TranslationClient::Initialize() {
         return false;
     }
 
-    // 【优化方案 3】强开 Windows 7 底层的 TLS 1.2 协议支持，防止 POST 握手被阻断
+    // 强开 Windows 7 底层的 TLS 1.2 协议支持
     DWORD protocols = FLAG_SECURE_PROTOCOL_TLS1_2;
     InternetSetOptionW(hSession, INTERNET_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
 
@@ -163,7 +162,7 @@ bool TranslationClient::Initialize() {
                                 static_cast<INTERNET_PORT>(port),
                                 NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to www.bing.com via WinINet");
+        LOG_ERROR("Failed to connect to cn.bing.com via WinINet");
         InternetCloseHandle(hSession);
         hSession = nullptr;
         return false;
@@ -247,7 +246,6 @@ string TranslationClient::MapLangCode(const string& lang) {
     return lang;
 }
 
-// 保留此函数以兼容头文件声明，但核心逻辑已移至 TranslateText 中
 string TranslationClient::HttpsPost(const string& path, const string& postData) {
     return "";
 }
@@ -279,7 +277,7 @@ string TranslationClient::ParseBingResponse(const string& json) {
     return SimpleJsonParser::unescapeJson(extracted);
 }
 
-// 重写翻译核心流程：GET获取Token -> POST提交翻译
+// 核心流程：GET获取Token及Cookie -> 携带凭据POST实现零封锁翻译
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
                                                    const string& sourceLang,
                                                    const string& targetLang) {
@@ -299,15 +297,30 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     string sl = MapLangCode(sourceLang);
     string tl = MapLangCode(targetLang);
     
-    // === 第一步：GET 首页获取动态防爬虫 Token ===
-    string ig, key, token;
+    // === 第一步：GET 首页获取动态防爬虫 Token 并捞取验证 Cookie ===
+    string ig, key, token, cookiesReceived;
     HINTERNET hGetReq = HttpOpenRequestW(hConnect, L"GET", L"/translator", nullptr, nullptr, nullptr, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
     if (hGetReq) {
-        // Win7兼容性：忽略证书错误
         DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
         InternetSetOptionW(hGetReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
 
         if (HttpSendRequestW(hGetReq, nullptr, 0, nullptr, 0)) {
+            // 【方案一杀手锏】手动从国内响应头中提取 MUID 等追踪 Cookie，用来绕过微软 205 校验
+            char headerBuf[4096] = {0};
+            DWORD headerLen = sizeof(headerBuf);
+            if (HttpQueryInfoA(hGetReq, HTTP_QUERY_SET_COOKIE, headerBuf, &headerLen, NULL)) {
+                string rawCookies(headerBuf, headerLen);
+                // 简单的 Cookie 裁剪，组合成给 POST 使用的规范格式
+                size_t cPos = 0;
+                while ((cPos = rawCookies.find("MUID=", cPos)) != string::npos) {
+                    size_t endPos = rawCookies.find(";", cPos);
+                    if (endPos != string::npos) {
+                        cookiesReceived += rawCookies.substr(cPos, endPos - cPos) + "; ";
+                    }
+                    cPos = (endPos == string::npos) ? rawCookies.length() : endPos;
+                }
+            }
+
             string html;
             char buffer[4096];
             DWORD bytesRead = 0;
@@ -328,7 +341,7 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
         InternetCloseHandle(hGetReq);
     }
 
-    // === 第二步：拼接凭据并 POST 获取翻译 ===
+    // === 第二步：拼接全套凭据并 POST 获取翻译 ===
     string path = "/ttranslatev3?isVertical=1";
     if (!ig.empty()) {
         path += "&IG=" + ig + "&IID=translator.5024.1";
@@ -341,16 +354,21 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
         return TranslationResult::NETWORK_ERROR;
     }
 
-    // Win7兼容性：忽略证书错误
     DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
     InternetSetOptionW(hPostReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
 
-    // 【优化方案 2】强行补全极其关键的 Referer 请求头（指向 www.bing.com），伪装成从官方网页发起的翻译
+    // 【深度伪装】全面校准为 cn.bing.com 的请求特征
     wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n"
                       L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\r\n"
-                      L"Referer: https://www.bing.com/translator\r\n";
+                      L"Referer: https://cn.bing.com/translator\r\n";
 
-    // 【优化方案 4】校准 POST 报文格式，去掉头部的 '&' 符号，变为标准的 `text=...` 开头
+    // 如果成功提取到了内部 Cookie，动态注入到 POST 请求头中
+    if (!cookiesReceived.empty()) {
+        wstring wCookies(cookiesReceived.begin(), cookiesReceived.end());
+        headers += L"Cookie: " + wCookies + L"\r\n";
+    }
+
+    // 【优化方案 4】严格校准 POST 边界
     string postData = "text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
     if (!token.empty() && !key.empty()) {
         postData += "&token=" + UrlEncode(token) + "&key=" + key;
