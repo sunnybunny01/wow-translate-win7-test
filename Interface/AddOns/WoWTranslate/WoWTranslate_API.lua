@@ -464,4 +464,7 @@ SlashCmdList["WOWTRANSLATE_KEY"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("|cFF888888示例：/wtkey 2026010100001234 abcde12345678FGH|r", 1, 1, 1)
     end
 end
+
+-- 执行一次即时初始化检查，确保插件加载时立刻激活 DLL 状态，不用死等 60 秒心跳
+WoWTranslate_API.CheckDLL()
 -- ====================================================================
