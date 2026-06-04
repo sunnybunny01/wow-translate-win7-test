@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(WoWTranslate VERSION 0.1.0)
 
+# ==============================================================================
+# 安全检查：魔兽 1.12.1 是纯 32 位程序，强制要求必须以 Win32 (x86) 架构配置编译
+# ==============================================================================
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "错误：魔兽世界 1.12 客户端是 32 位程序，无法加载 64 位 DLL！请重新配置 CMake 为 Win32 (x86) 编译。例如使用命令: cmake -A Win32 ..")
+endif()
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,12 +35,13 @@ target_include_directories(WoWTranslate PRIVATE
 # MinHook library setup - Force 32-bit for WoW compatibility
 set(MINHOOK_LIB "${CMAKE_CURRENT_SOURCE_DIR}/third_party/MinHook.x86.lib")
 
-# Link libraries - Changed from winhttp to wininet for Win7 proxy compatibility
+# Link libraries - 联动修改：新增 advapi32 以支持 Windows 原生加密 MD5 算法
 target_link_libraries(WoWTranslate PRIVATE
     kernel32
     user32
     shell32
-    wininet
+    wininet   # 用于百度翻译 API 的网络请求发送
+    advapi32  # 核心新增：用于 utils.cpp 中的 Windows CryptoAPI (MD5计算)
 )
 
 # Add MinHook if available
@@ -48,7 +56,7 @@ endif()
 
 # Compiler-specific settings
 if(MSVC)
-    # Set static runtime library for release builds
+    # Set static runtime library for release builds (/MT 和 /MTd)，确保生成的 DLL 彻底脱离 VS 运行库依赖，直接在 Win7 裸机运行
     set_property(TARGET WoWTranslate PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
