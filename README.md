@@ -103,7 +103,7 @@ You can use the following Macro in-game to create an Outgoing Translation toggle
 
 1. **Glossary** — WoW terms translated instantly (raids, bosses, slang)
 2. **Cache** — Seen before? Instant and free
-3. **Google Translate**
+3. **Microsoft bing Translate**
 
 ---
 
