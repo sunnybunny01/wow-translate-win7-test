@@ -1,5 +1,5 @@
 // translator_core.cpp - Translation functionality for WoWTranslate
-// Sends requests to cn.bing.com — Microsoft Bing Free Translation
+// Sends requests to www.bing.com — Microsoft Bing Free Translation (International/TLS1.2 Optimized)
 
 #include <windows.h>
 #include <wininet.h>
@@ -17,6 +17,11 @@
 #include "../include/utils.h"
 
 #pragma comment(lib, "wininet.lib")
+
+// 【优化方案 3】确保老旧编译环境下也能识别 Win7 的 TLS 1.2 标记
+#ifndef FLAG_SECURE_PROTOCOL_TLS1_2
+#define FLAG_SECURE_PROTOCOL_TLS1_2 0x00000800
+#endif
 
 using namespace std;
 
@@ -121,12 +126,13 @@ TranslationClient::~TranslationClient() {
 bool TranslationClient::Initialize() {
     if (initialized) Cleanup();
 
-    const std::string host = "cn.bing.com";
+    // 【优化方案 1】全面切换为微软全球国际域名，完美适配加速器香港节点，避开 cn.bing.com 的严格审查
+    const std::string host = "www.bing.com";
     const int port = 443;
 
-    LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode)");
+    LOG_INFO("Initializing Microsoft Bing Free translation client (WinINet mode - International)");
 
-    // 【关键修改 1】伪装成真实的浏览器 User-Agent，不能用 WoWTranslate/0.14
+    // 伪装成真实的浏览器 User-Agent
     hSession = InternetOpenW(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
                              INTERNET_OPEN_TYPE_PRECONFIG,
                              NULL,
@@ -136,6 +142,10 @@ bool TranslationClient::Initialize() {
         LOG_ERROR("Failed to initialize WinINet session");
         return false;
     }
+
+    // 【优化方案 3】强开 Windows 7 底层的 TLS 1.2 协议支持，防止 POST 握手被阻断
+    DWORD protocols = FLAG_SECURE_PROTOCOL_TLS1_2;
+    InternetSetOptionW(hSession, INTERNET_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
 
     // Set 8-second timeouts for WinINet
     DWORD timeout = 8000;
@@ -148,7 +158,7 @@ bool TranslationClient::Initialize() {
                                 static_cast<INTERNET_PORT>(port),
                                 NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
-        LOG_ERROR("Failed to connect to cn.bing.com via WinINet");
+        LOG_ERROR("Failed to connect to www.bing.com via WinINet");
         InternetCloseHandle(hSession);
         hSession = nullptr;
         return false;
@@ -264,7 +274,7 @@ string TranslationClient::ParseBingResponse(const string& json) {
     return SimpleJsonParser::unescapeJson(extracted);
 }
 
-// 【关键修改 2】重写翻译核心流程：GET获取Token -> POST提交翻译
+// 重写翻译核心流程：GET获取Token -> POST提交翻译
 TranslationResult TranslationClient::TranslateText(const string& text, string& result,
                                                    const string& sourceLang,
                                                    const string& targetLang) {
@@ -288,7 +298,7 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     string ig, key, token;
     HINTERNET hGetReq = HttpOpenRequestW(hConnect, L"GET", L"/translator", nullptr, nullptr, nullptr, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD, 0);
     if (hGetReq) {
-        // 【关键修改 3】Win7兼容性：忽略证书错误
+        // Win7兼容性：忽略证书错误
         DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
         InternetSetOptionW(hGetReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
 
@@ -330,10 +340,13 @@ TranslationResult TranslationClient::TranslateText(const string& text, string& r
     DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
     InternetSetOptionW(hPostReq, INTERNET_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
 
+    // 【优化方案 2】强行补全极其关键的 Referer 请求头（指向 www.bing.com），伪装成从官方网页发起的翻译
     wstring headers = L"Content-Type: application/x-www-form-urlencoded\r\n"
-                      L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\r\n";
+                      L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36\r\n"
+                      L"Referer: https://www.bing.com/translator\r\n";
 
-    string postData = "&text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
+    // 【优化方案 4】校准 POST 报文格式，去掉头部的 '&' 符号，变为标准的 `text=...` 开头
+    string postData = "text=" + UrlEncode(text) + "&fromLang=" + sl + "&to=" + tl;
     if (!token.empty() && !key.empty()) {
         postData += "&token=" + UrlEncode(token) + "&key=" + key;
     }
