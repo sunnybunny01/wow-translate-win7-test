@@ -83,6 +83,7 @@ YourWoWFolder/
 | `/wt test` | Test translation |
 | `/wt outgoing on` | Enable outgoing translation |
 | `/wt clearcache` | Clear translation cache |
+| `/wtkey Your_Baidu_account  Your_Baidu_Translate_KEY` | The key value of the Baidu Translate API input |
 
 
 You can use the following Macro in-game to create an Outgoing Translation toggle:
@@ -103,7 +104,7 @@ You can use the following Macro in-game to create an Outgoing Translation toggle
 
 1. **Glossary** — WoW terms translated instantly (raids, bosses, slang)
 2. **Cache** — Seen before? Instant and free
-3. **Microsoft bing Translate**
+3. **china baidu Translate**
 
 ---
 
