@@ -1,9 +1,9 @@
 @echo off
-REM WoWTranslate DLL Build Script for Windows
+REM WoWTranslate DLL Build Script for Windows (Baidu API Version)
 REM Requires: Visual Studio 2022 with C++ workload, CMake 3.20+
 
 echo ============================================
-echo WoWTranslate DLL Build Script
+echo WoWTranslate DLL Build Script (Baidu API Ver)
 echo ============================================
 echo.
 
@@ -11,6 +11,8 @@ REM Check for CMake
 where cmake >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo ERROR: CMake not found. Please install CMake 3.20+ and add to PATH.
+    echo.
+    pause
     exit /b 1
 )
 
@@ -34,8 +36,10 @@ REM Configure for 32-bit (WoW 1.12 is 32-bit)
 cmake .. -G "Visual Studio 17 2022" -A Win32
 
 if %ERRORLEVEL% neq 0 (
+    echo.
     echo ERROR: CMake configuration failed.
     cd ..
+    pause
     exit /b 1
 )
 
@@ -46,14 +50,16 @@ echo.
 cmake --build . --config Release
 
 if %ERRORLEVEL% neq 0 (
+    echo.
     echo ERROR: Build failed.
     cd ..
+    pause
     exit /b 1
 )
 
 echo.
 echo ============================================
-echo Build successful!
+echo Build successful! (Baidu API Version)
 echo ============================================
 echo.
 echo Output: build\bin\Release\WoWTranslate.dll
@@ -65,3 +71,4 @@ echo 3. Copy WoWTranslate addon folder to Interface\AddOns\
 echo.
 
 cd ..
+pause
