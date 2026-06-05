@@ -20,7 +20,8 @@
 ---
 
 ## Announcement:
-
+根据源码作者修改编译的,可以在win7系统上运行的wow实时翻译插件. This is a real-time translation plugin for WoW that has been modified and compiled based on the source code author and can run on Windows 7. 源码项目地址 Source code project address: https://github.com/sanjaygbhat/wow-translate
+此本版适用中国大陆用户调用自身百度翻译API接口运行,需要注意个人每月百度翻译的免费额度. This version is designed for users in mainland China to use Baidu Translate's own API interface. Please note your monthly free quota for Baidu Translate.
 
 ## ✨ Features
 
