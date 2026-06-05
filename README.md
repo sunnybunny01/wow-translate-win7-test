@@ -125,6 +125,7 @@ Open settings with `/wt show`:
 | DLL not loading | Ensure `WoWTranslate.dll` is next to `WoW.exe` and listed in `dlls.txt` |
 | No translations | Run `/wt status` to check DLL loaded, then `/wt test` |
 | Launcher issues | Run `WoW.exe` directly instead of through a launcher |
+| Baidu API call issue | Run `/wtkey appid(baidu) key(baidu)` to Write your Baidu API-specific ID and key, and save them in your local WoW directory |
 
 ---
 
