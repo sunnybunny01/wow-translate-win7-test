@@ -9,6 +9,6 @@ WoWTranslate_Glossary.lua
 WoWTranslate_OutGlossary.lua
 WoWTranslate_Cache.lua
 WoWTranslate_API.lua
-WoWTranslate_Config_ManualSingle.lua
+WoWTranslate_Config.lua
 WoWTranslate_Minimap.lua
-WoWTranslate_ManualSingle.lua
+WoWTranslate.lua
