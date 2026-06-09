@@ -309,13 +309,14 @@ local Y_COLOR_FOLLOW = -542
 
 local Y_EXP_HEADER   = -571
 local Y_EXP_ROW      = -593
+local Y_EXP_ROW2     = -616
 
-local Y_NAME_HEADER  = -625
-local Y_NAME_ROW     = -647
+local Y_NAME_HEADER  = -650
+local Y_NAME_ROW     = -672
 
-local Y_SP_HEADER    = -679
-local Y_SP_ROW1      = -701
-local Y_SP_ROW2      = -723
+local Y_SP_HEADER    = -704
+local Y_SP_ROW1      = -726
+local Y_SP_ROW2      = -748
 
 -- 接收翻译设置区
 CreateHeader("接收翻译（他人聊天→你）", Y_IN_HEADER)
@@ -478,6 +479,8 @@ expHeader:SetTextColor(1, 0.5, 0)
 
 configFrame.elements.replaceMode      = CreateCheckbox("替换原文显示翻译", 25,  Y_EXP_ROW, "replaceMode", nil)
 configFrame.elements.translateGF      = CreateCheckbox("翻译组队查找器",           270, Y_EXP_ROW, "translateGroupFinder", nil)
+configFrame.elements.manualTranslate  = CreateCheckbox("启用手动单条翻译", 25, Y_EXP_ROW2, "manualTranslateEnabled", nil)
+configFrame.elements.manualLink       = CreateCheckbox("聊天行显示[译]按钮", 270, Y_EXP_ROW2, "manualTranslateShowLinks", nil)
 
 -- 名字翻译设置
 CreateHeader("名字翻译：", Y_NAME_HEADER)
@@ -540,6 +543,8 @@ local function RefreshUI()
     if e.colorFollow then e.colorFollow:SetChecked(cfg.translationColorFollow) end
     if e.replaceMode    then e.replaceMode:SetChecked(cfg.replaceMode) end
     if e.translateGF    then e.translateGF:SetChecked(cfg.translateGroupFinder) end
+    if e.manualTranslate then e.manualTranslate:SetChecked(cfg.manualTranslateEnabled) end
+    if e.manualLink     then e.manualLink:SetChecked(cfg.manualTranslateShowLinks) end
     if e.translateNames then e.translateNames:SetChecked(cfg.translatePlayerNames) end
     if e.translateGuilds then e.translateGuilds:SetChecked(cfg.translateGuildNames) end
     if e.translateNP    then e.translateNP:SetChecked(cfg.translateNameplates) end

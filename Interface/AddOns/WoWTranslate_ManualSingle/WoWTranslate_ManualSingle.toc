@@ -1,0 +1,14 @@
+## Interface: 11200
+## Title: WoWTranslate Manual Single
+## Notes: Real-time chat translation for WoW 1.12 - manual single-line build
+## Version: 1.5-manual-single
+## Author: belthazor, WoWTranslateTeam
+## SavedVariables: WoWTranslateDB WoWTranslateCache WoWTranslateDebugLog WoWTranslateManualRecords
+
+WoWTranslate_Glossary.lua
+WoWTranslate_OutGlossary.lua
+WoWTranslate_Cache.lua
+WoWTranslate_API.lua
+WoWTranslate_Config_ManualSingle.lua
+WoWTranslate_Minimap.lua
+WoWTranslate_ManualSingle.lua

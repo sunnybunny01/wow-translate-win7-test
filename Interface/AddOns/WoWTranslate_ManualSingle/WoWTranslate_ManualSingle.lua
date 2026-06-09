@@ -7,6 +7,7 @@
 -- ============================================================================
 WoWTranslateDB = WoWTranslateDB or {}
 WoWTranslateDebugLog = WoWTranslateDebugLog or {}
+WoWTranslateManualRecords = WoWTranslateManualRecords or {}
 
 -- ============================================================================
 -- LOCAL STATE
@@ -21,6 +22,8 @@ local hookCallCount = 0         -- incremented every time any hook body executes
 
 local pendingMessages = {}
 local messageCounter = 0
+local manualTranslateFrames = {}
+local MANUAL_TRANSLATE_MAX_RECORDS = 500
 
 -- Maps capturedArg1 (raw message text) -> {frame -> true}
 -- Collects every chat frame that showed the original Chinese message so the async
@@ -138,6 +141,8 @@ local defaults = {
     translationColorFollow = false,  -- If true, body color follows the source channel color
     replaceMode = false,         -- [EXPERIMENTAL] Replace original message with translation instead of appending
     translateGroupFinder = false, -- [EXPERIMENTAL] Translate LFT group finder titles/descriptions
+    manualTranslateEnabled = true, -- [EXPERIMENTAL] Click [译] after a chat line to translate only that line
+    manualTranslateShowLinks = true,
     -- Name/guild translation
     translatePlayerNames = false,
     translateGuildNames = false,
@@ -1203,6 +1208,189 @@ local function ResolvePlayerDisplayName(rawName, callback)
                 finish(rawName)
             end
         end)
+    end
+end
+
+-- ============================================================================
+-- MANUAL SINGLE-LINE TRANSLATION
+-- ============================================================================
+local function EnsureManualTranslateStore()
+    if type(WoWTranslateManualRecords) ~= "table" then
+        WoWTranslateManualRecords = {}
+    end
+    if type(WoWTranslateManualRecords.records) ~= "table" then
+        WoWTranslateManualRecords.records = {}
+    end
+    if type(WoWTranslateManualRecords.order) ~= "table" then
+        WoWTranslateManualRecords.order = {}
+    end
+    WoWTranslateManualRecords.lastId = tonumber(WoWTranslateManualRecords.lastId) or 0
+end
+
+local function TrimManualTranslateStore()
+    EnsureManualTranslateStore()
+    while table.getn(WoWTranslateManualRecords.order) > MANUAL_TRANSLATE_MAX_RECORDS do
+        local oldId = table.remove(WoWTranslateManualRecords.order, 1)
+        if oldId then
+            WoWTranslateManualRecords.records[tostring(oldId)] = nil
+            manualTranslateFrames[tostring(oldId)] = nil
+        end
+    end
+end
+
+local function BuildManualTranslateLink(id)
+    return "|cFF00FFFF|Hwtmsg:" .. tostring(id) .. "|h[译]|h|r"
+end
+
+local function ShouldRecordManualMessage(eventName, rawText, sender)
+    if not WoWTranslateDB or not WoWTranslateDB.manualTranslateEnabled then return false end
+    if not WoWTranslateDB.manualTranslateShowLinks then return false end
+    if not EVENT_TO_CHANNEL[eventName] then return false end
+    if not rawText or rawText == "" then return false end
+    if string.sub(rawText, 1, 1) == "#" then return false end
+    if not sender or sender == "" then return false end
+
+    local detectedLang = DetectSourceLanguage(rawText)
+    if not detectedLang then return false end
+    if detectedLang == "zh" then return false end
+
+    return true
+end
+
+local function StoreManualTranslateRecord(frame, eventName, rawText, sender, channelStr)
+    if not ShouldRecordManualMessage(eventName, rawText, sender) then return nil end
+    EnsureManualTranslateStore()
+    WoWTranslateManualRecords.lastId = WoWTranslateManualRecords.lastId + 1
+    local id = tostring(WoWTranslateManualRecords.lastId)
+    local frameName = frame and frame.GetName and frame:GetName() or nil
+    WoWTranslateManualRecords.records[id] = {
+        text = rawText,
+        sender = sender,
+        event = eventName,
+        channelStr = channelStr,
+        frameName = frameName,
+        timestamp = GetTime(),
+    }
+    table.insert(WoWTranslateManualRecords.order, id)
+    manualTranslateFrames[id] = frame
+    TrimManualTranslateStore()
+    return id
+end
+
+local function AppendManualTranslateLink(displayText, id)
+    if not id or type(displayText) ~= "string" or displayText == "" then return displayText end
+    return displayText .. " " .. BuildManualTranslateLink(id)
+end
+
+local function PostManualTranslation(record, translatedBody, frame)
+    if not frame then frame = DEFAULT_CHAT_FRAME end
+    local channel = EVENT_TO_CHANNEL[record.event]
+    local channelTag = GetChannelTag(record.event, record.channelStr)
+    local msgColor = (WoWTranslateDB and WoWTranslateDB.translationColor) or ""
+    local chanColorHex = GetChatTypeColorHex(record.event, record.channelStr)
+    local chanNamePart = string.sub(channelTag, 1, 3) == "WT-" and string.sub(channelTag, 4) or nil
+
+    ResolvePlayerDisplayName(record.sender, function(displayName)
+        local prefix
+        if chanColorHex and chanNamePart then
+            prefix = "|cFF00FFFF[WT-|r|cFF" .. chanColorHex .. chanNamePart .. "]|r"
+        else
+            prefix = "|cFF00FFFF[" .. channelTag .. "]|r"
+        end
+        local bodyHex = msgColor
+        if WoWTranslateDB and WoWTranslateDB.translationColorFollow then
+            bodyHex = chanColorHex or ""
+        end
+        local displayBody = bodyHex ~= "" and ("|cFF" .. bodyHex .. translatedBody .. "|r") or translatedBody
+        local senderPrefix = BuildSenderPrefix(record.sender, displayName, channel, nil)
+        frame:AddMessage(prefix .. " " .. senderPrefix .. displayBody)
+    end)
+end
+
+local function TranslateManualMessageById(id, frame)
+    EnsureManualTranslateStore()
+    id = tostring(id or "")
+    local record = WoWTranslateManualRecords.records[id]
+    if not record then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 这条聊天记录已超过500条缓存上限或已失效|r")
+        return
+    end
+
+    local rawText = record.text
+    local detectedLang = DetectSourceLanguage(rawText)
+    if not detectedLang then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 这条消息没有检测到可翻译语言|r")
+        return
+    end
+    local targetLang = (WoWTranslateDB and WoWTranslateDB.incomingToLang) or "en"
+    if detectedLang == targetLang then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 这条消息已经是目标语言|r")
+        return
+    end
+
+    local segments = SplitIntoSegments(rawText)
+    if not HasTranslatableContent(segments) then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 这条消息没有可翻译的正文|r")
+        return
+    end
+
+    local cached, found = WoWTranslate_CacheGet(rawText)
+    if found then
+        PostManualTranslation(record, ReconstructMessage(segments, cached), frame)
+        return
+    end
+
+    local plainText = BuildTranslatableText(segments)
+    local textToTranslate = plainText
+    if detectedLang == "en" then
+        if WoWTranslate_CheckOutGlossaryExact then
+            local outExact = WoWTranslate_CheckOutGlossaryExact(plainText)
+            if outExact then
+                WoWTranslate_CacheSave(rawText, outExact)
+                PostManualTranslation(record, ReconstructMessage(segments, outExact), frame)
+                return
+            end
+        end
+        if WoWTranslate_CheckOutGlossaryPartial then
+            local outPartial = WoWTranslate_CheckOutGlossaryPartial(plainText)
+            if outPartial then textToTranslate = outPartial end
+        end
+    else
+        plainText = PreprocessIncoming(plainText)
+        textToTranslate = plainText
+        local glossaryResult = WoWTranslate_CheckGlossaryExact(plainText)
+        if glossaryResult then
+            WoWTranslate_CacheSave(rawText, glossaryResult)
+            PostManualTranslation(record, ReconstructMessage(segments, glossaryResult), frame)
+            return
+        end
+        local partialResult = WoWTranslate_CheckGlossaryPartial(plainText)
+        if partialResult then
+            if not DetectSourceLanguage(partialResult) then
+                WoWTranslate_CacheSave(rawText, partialResult)
+                PostManualTranslation(record, ReconstructMessage(segments, partialResult), frame)
+                return
+            end
+            textToTranslate = partialResult
+        end
+    end
+
+    if not WoWTranslate_API or not WoWTranslate_API.IsAvailable() then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 翻译核心未加载 - 输入 /wt status 查看|r")
+        return
+    end
+
+    local ok = WoWTranslate_API.Translate(textToTranslate, function(translation, err)
+        if translation and translation ~= "" then
+            WoWTranslate_CacheSave(rawText, translation)
+            PostManualTranslation(record, ReconstructMessage(segments, translation), frame)
+        else
+            (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 单条翻译失败 (" .. tostring(err) .. ")|r")
+        end
+    end, detectedLang)
+
+    if not ok then
+        (frame or DEFAULT_CHAT_FRAME):AddMessage("|cFFFFFF00[WT]: 翻译队列正忙，请稍后再点一次[译]|r")
     end
 end
 
@@ -2605,6 +2793,8 @@ local function HookChatFrames(force)
                             capturedThis.AddMessage = function(f, a, b, c, d, e, g)
                                 messageShownInFrame = true
                                 capturedThis.AddMessage = origFrameAddMsg
+                                local manualId = StoreManualTranslateRecord(capturedThis, capturedEvent, capturedArg1, capturedArg2, capturedArg4)
+                                a = AppendManualTranslateLink(a, manualId)
                                 if WoWTranslateDB and WoWTranslateDB.replaceMode then
                                     -- 替换模式：隐藏原始消息，保存参数
                                     pendingArgs = {f=f, a=a, b=b, c=c, d=d, e=e, g=g}
@@ -3554,12 +3744,20 @@ local function InitializeSettings()
     if WoWTranslateDB.translateGroupFinder == nil then
         WoWTranslateDB.translateGroupFinder = false
     end
+    if WoWTranslateDB.manualTranslateEnabled == nil then
+        WoWTranslateDB.manualTranslateEnabled = true
+    end
+    if WoWTranslateDB.manualTranslateShowLinks == nil then
+        WoWTranslateDB.manualTranslateShowLinks = true
+    end
     if WoWTranslateDB.outgoingButtonPos == nil then
         WoWTranslateDB.outgoingButtonPos = { x = 100, y = 100 }
     end
     if WoWTranslateDB.showOutgoingButton == nil then
         WoWTranslateDB.showOutgoingButton = true
     end
+    EnsureManualTranslateStore()
+    TrimManualTranslateStore()
 end
 
 local function OnAddonLoaded()
@@ -3593,6 +3791,11 @@ local function HookHyperlinkShow()
 
     ChatFrame_OnHyperlinkShow = function(link, text, button)
         local capturedFrame = this
+        local _, _, manualId = string.find(link or "", "^wtmsg:(%d+)")
+        if manualId then
+            TranslateManualMessageById(manualId, capturedFrame or manualTranslateFrames[tostring(manualId)] or DEFAULT_CHAT_FRAME)
+            return
+        end
         if button == "RightButton" and IsShiftKeyDown() then
             local _, _, playerName = string.find(link, "^player:(.+)")
             if playerName and playerName ~= ""
@@ -3644,7 +3847,7 @@ eventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 
 eventFrame:SetScript("OnEvent", function()
-    if event == "ADDON_LOADED" and arg1 == "WoWTranslate" then
+    if event == "ADDON_LOADED" and (arg1 == "WoWTranslate" or arg1 == "WoWTranslate_ManualSingle") then
         OnAddonLoaded()
     elseif event == "PLAYER_LOGIN" then
         OnPlayerLogin()
